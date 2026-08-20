@@ -140,6 +140,25 @@ Cada linha tem três coisas:
 3. **Uma sugestão em cinza** para o que não foi anotado, calculada sobre um preço de
    referência. Se você anotar a NM, todas as outras sugestões passam a sair dela.
 
+### Preço por versão da carta
+
+A mesma carta tem preços bem diferentes conforme a versão — Normal, Foil, Reverse
+Foil e afins — e a Liga publica cada uma separada, em texto. O app mostra todas, da
+mais barata para a mais cara. Para o Mega Gengar ex 269/217:
+
+| Versão | Menor | Médio | Maior |
+| --- | --- | --- | --- |
+| Normal | R$ 198,90 | R$ 319,73 | R$ 450,00 |
+| Foil | R$ 206,78 | R$ 366,79 | R$ 599,99 |
+
+O menor de cada versão é o preço do anúncio mais barato dela — é o mesmo número que
+aparece no topo da lista de lojas do site deles.
+
+**Como as versões são codificadas:** os ids são todos números primos (Foil 2, Reverse
+Foil 3, Promo 7, Shattered Holo 41, Pokeball Foil 47…) e a versão de um anúncio é o
+**produto** deles. Um anúncio com `extras: 574` é `2 × 7 × 41` = Foil + Promo +
+Shattered Holo. `nomeDaVersao()` em `liga.mjs` fatora o número para montar o nome.
+
 ### Por que o preço por estado não vem sozinho
 
 A Liga tem o preço de cada anúncio por estado, e ele aparece na tela — mas **não é

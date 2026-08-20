@@ -108,6 +108,46 @@ async function baixar(url) {
 // Estado de conservacao, na numeracao da propria Liga.
 const QUALIDADES = { 1: 'M', 2: 'NM', 3: 'SP', 4: 'MP', 5: 'HP', 6: 'D' };
 
+// Versoes da carta ("extras"), na numeracao da Liga. Todos os ids sao NUMEROS
+// PRIMOS, e a versao de um anuncio e o PRODUTO deles — 574 = 2x7x41 quer dizer
+// Foil + Promo + Shattered Holo. Isso permite decodificar qualquer combinacao
+// fatorando o numero. A pagina traz essa tabela; esta copia e so a reserva.
+const EXTRAS_PADRAO = [
+  { id: 2, label: 'Foil' }, { id: 3, label: 'Reverse Foil' }, { id: 5, label: 'Edition One' },
+  { id: 7, label: 'Promo' }, { id: 11, label: 'Assinada' }, { id: 13, label: 'Pre Release' },
+  { id: 17, label: 'Alterada' }, { id: 19, label: 'Staff' }, { id: 23, label: 'Textless' },
+  { id: 29, label: 'Oversize' }, { id: 31, label: 'Shadowless' }, { id: 37, label: 'Misprint' },
+  { id: 41, label: 'Shattered Holo' }, { id: 43, label: 'Master Ball' }, { id: 47, label: 'Pokeball Foil' },
+];
+
+function lerExtras(html) {
+  const m = html.match(/Extras\s*=\s*(\[[\s\S]*?\])\s*;/);
+  if (!m) return EXTRAS_PADRAO;
+  try {
+    const arr = JSON.parse(m[1]);
+    return Array.isArray(arr) && arr.length ? arr : EXTRAS_PADRAO;
+  } catch (e) {
+    return EXTRAS_PADRAO;
+  }
+}
+
+// 0 -> "Normal"; 2 -> "Foil"; 574 -> "Foil + Promo + Shattered Holo".
+function nomeDaVersao(chave, extras) {
+  let n = Number(chave);
+  if (!Number.isFinite(n) || n <= 0) return 'Normal';
+
+  const partes = [];
+  extras.forEach(function (e) {
+    while (n % e.id === 0) {
+      partes.push(e.label);
+      n = n / e.id;
+    }
+  });
+
+  if (n !== 1) partes.push('versão ' + chave); // apareceu um id que nao conhecemos
+  return partes.length ? partes.join(' + ') : 'Normal';
+}
+
 // Quantos anuncios existem de cada estado.
 //
 // O PRECO de cada anuncio nao da para ler: eles publicam como imagem (cada
@@ -149,13 +189,38 @@ function parseCardPage(html, numPedido) {
   const tituloBruto = t ? limpar(t[1].split('|')[0]) : '';
   const partes = separarNumero(tituloBruto);
 
+  const extras = lerExtras(html);
+
   return edicoes.map(function (e) {
-    // price["0"] e o consolidado: p = menor, m = medio, g = maior.
+    // As chaves de `price` sao as VERSOES da carta, nao um consolidado: "0" e a
+    // Normal, "2" a Foil, "3" a Reverse Foil... Cada uma tem seu proprio menor,
+    // medio e maior preco, e sao esses os numeros que a Liga mostra no bloco
+    // "Preco Medio de Venda no Marketplace".
     const precos = e.price || {};
-    const p = precos['0'] || Object.values(precos)[0] || {};
+    const versoes = Object.keys(precos).map(function (k) {
+      const v = precos[k] || {};
+      return {
+        id: k,
+        nome: nomeDaVersao(k, extras),
+        precoMin: num0(v.p),
+        precoMed: num0(v.m),
+        precoMax: num0(v.g),
+      };
+    }).filter(function (v) {
+      return v.precoMin != null || v.precoMed != null;
+    }).sort(function (a, b) {
+      return (a.precoMin == null ? Infinity : a.precoMin) - (b.precoMin == null ? Infinity : b.precoMin);
+    });
+
+    // O preco que representa a carta e o da versao mais barata disponivel.
+    const p = versoes.length
+      ? { p: versoes[0].precoMin, m: versoes[0].precoMed, g: versoes[0].precoMax }
+      : {};
+
     const num = String(e.num == null ? (numPedido || '') : e.num);
     const estoque = contarPorEstado(html, e.id, num);
     return {
+      versoes: versoes,
       anuncios: estoque ? estoque.porEstado : null,
       anunciosTotal: estoque ? estoque.total : null,
       nome: partes.nome || tituloBruto,

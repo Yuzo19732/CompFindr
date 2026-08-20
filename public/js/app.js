@@ -276,11 +276,13 @@
   function baseDeReferencia(carta, achado, cfg) {
     const meu = Store.precoManual(carta);
     if (meu != null) return { valor: meu, texto: 'preço que você anotou' };
+    // O menor anunciado vem antes do médio: é o número concreto que aparece
+    // na lista de lojas, e é sobre ele que se raciocina na hora de comprar.
+    if (achado && achado.precoMin != null) {
+      return { valor: achado.precoMin, texto: 'menor preço anunciado na LigaPokémon' };
+    }
     if (achado && achado.precoMed != null) {
       return { valor: achado.precoMed, texto: 'preço médio na LigaPokémon' };
-    }
-    if (achado && achado.precoMin != null) {
-      return { valor: achado.precoMin, texto: 'menor preço na LigaPokémon' };
     }
     if (carta.precoUSD != null) {
       return { valor: carta.precoUSD * cfg.usdBrl, texto: 'preço de mercado do TCGPlayer' };
@@ -459,12 +461,35 @@
       const l = r.achado;
       precoBRL = l.precoMin;
       desenharAcoes();
-      precos.appendChild(linhaPreco(
-        'LigaPokémon', 'menor preço anunciado',
-        brl(l.precoMin),
-        'médio ' + (brl(l.precoMed) || '—') + '  ·  maior ' + (brl(l.precoMax) || '—'),
-        true
-      ));
+
+      // Uma linha por VERSÃO da carta. A mesma carta tem preços bem diferentes
+      // em Normal, Foil, Reverse Foil e afins — juntar tudo num número só
+      // esconde justamente a diferença que importa na hora de comprar.
+      const versoes = (l.versoes && l.versoes.length)
+        ? l.versoes
+        : [{ nome: 'Normal', precoMin: l.precoMin, precoMed: l.precoMed, precoMax: l.precoMax }];
+
+      const titulo = document.createElement('div');
+      titulo.className = 'estados-titulo';
+      titulo.textContent = 'LigaPokémon — menor preço anunciado';
+      precos.appendChild(titulo);
+
+      versoes.forEach(function (v, i) {
+        precos.appendChild(linhaPreco(
+          v.nome, 'na LigaPokémon',
+          brl(v.precoMin) || '—',
+          'médio ' + (brl(v.precoMed) || '—') + '  ·  maior ' + (brl(v.precoMax) || '—'),
+          i === 0
+        ));
+      });
+
+      if (l.anunciosTotal) {
+        const p = document.createElement('p');
+        p.className = 'ajuda';
+        p.textContent = l.anunciosTotal + ' anúncio(s) no total. O menor preço de cada ' +
+          'versão é o do anúncio mais barato dela, do jeito que a Liga publica.';
+        precos.appendChild(p);
+      }
     } else if (cfg.consultarLiga) {
       const p = document.createElement('p');
       p.className = 'ajuda';
