@@ -25,10 +25,13 @@ bloqueia a câmera** porque não é HTTPS. Para testar no celular, publique (aba
 1. Suba esta pasta para um repositório no GitHub.
 2. No Netlify: **Add new site → Import an existing project** e escolha o repositório.
 3. As configurações já vêm prontas no `netlify.toml`; é só confirmar:
-   - **Build command:** `node tools/make-icons.cjs`
+   - **Build command:** `node tools/build.cjs`
    - **Publish directory:** `public`
    - **Functions directory:** `netlify/functions`
 4. Publique. O Netlify entrega em HTTPS, então a câmera funciona no celular.
+
+Feito isso uma vez, **todo `git push` para o `main` republica sozinho**. Não precisa
+mexer no Netlify de novo.
 
 Sem repositório, dá para arrastar a pasta em **Sites → Add new site → Deploy manually**,
 mas aí as funções do servidor não sobem e o preço da LigaPokémon não funciona.
@@ -155,8 +158,15 @@ netlify/functions/
 
 tools/
   dev-server.mjs      servidor local, sem dependências
-  make-icons.cjs      gera os ícones no build
+  build.cjs           roda no deploy: ícones + versão do service worker
+  make-icons.cjs      gera os ícones
 ```
+
+**Sobre a versão do service worker.** O navegador só reinstala o service worker
+quando o arquivo `sw.js` muda. Com uma versão fixa no código, quem já instalou o app
+continuaria vendo o CSS e o JS antigos para sempre, mesmo com o deploy novo no ar. Por
+isso o `build.cjs` carimba o identificador do commit no `sw.js` a cada publicação — a
+linha `const VERSAO` no repositório é só um valor de espera.
 
 Os dados ficam só no navegador do aparelho. Use **Ajustes → Exportar** para não perder.
 

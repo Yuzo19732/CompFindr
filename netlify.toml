@@ -4,7 +4,7 @@
 [build]
   publish = "public"
   # Não há build step: o site é HTML/CSS/JS puro.
-  command = "node tools/make-icons.cjs"
+  command = "node tools/build.cjs"
   functions = "netlify/functions"
 
 [functions]

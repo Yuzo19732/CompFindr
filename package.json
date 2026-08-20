@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "icons": "node tools/make-icons.cjs",
+    "build": "node tools/build.cjs",
     "dev": "node tools/dev-server.mjs",
     "start": "node tools/dev-server.mjs"
   }
