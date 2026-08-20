@@ -404,6 +404,19 @@ input:focus { outline: 2px solid var(--destaque-2); outline-offset: -1px; }
 .preco-linha .valor small { display: block; font-weight: 500; font-size: .72rem; color: var(--texto-fraco); text-align: right; }
 .preco-linha .valor.verde { color: var(--ok); }
 
+/* ---------- preço anotado à mão ---------- */
+
+.meu-preco {
+  background: var(--fundo-3);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.meu-preco label { display: block; font-size: .82rem; color: var(--texto-fraco); margin-bottom: 8px; }
+.linha-meu-preco { display: flex; align-items: center; gap: 8px; }
+.linha-meu-preco span { color: var(--texto-fraco); font-size: .9rem; }
+.linha-meu-preco input { flex: 1; min-width: 0; padding: 8px 10px; }
+
 /* ---------- estados de conservação ---------- */
 
 .estados {

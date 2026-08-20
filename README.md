@@ -137,6 +137,38 @@ isolada em `parseCardPage()` e `parseLista()` no arquivo `netlify/functions/liga
 O app faz no máximo duas consultas por vez e guarda o resultado por 15 minutos, para
 não pesar no site deles.
 
+### O preço em reais só funciona rodando local
+
+Medido em 2026-08-20: **publicado no Netlify, a LigaPokémon recusa o pedido.** Ela
+fica atrás do Cloudflare, que responde `403` com `cf-mitigated: challenge` — a página
+"Just a moment…". Isso vale para as duas rotas:
+
+| De onde sai o pedido | Ponto de presença | Resultado |
+| --- | --- | --- |
+| Função comum do Netlify | Ohio, EUA | 403 challenge |
+| Edge function (`/api/liga`) | São Paulo | 403 challenge |
+| `node tools/dev-server.mjs` no PC | São Paulo | 200 OK |
+
+Ou seja, não é geografia — a edge function chegou a rodar por São Paulo e mesmo assim
+foi barrada. É detecção de automação sobre a infraestrutura de nuvem. Passar por cima
+disso significaria derrotar uma proteção anti-bot, coisa que este projeto não faz.
+
+Consequência prática: **rodando no seu PC, o preço da Liga aparece; no site
+publicado, não.** O app percebe isso sozinho (desiste depois de duas tentativas na
+sessão), explica na tela o que houve e oferece o link para abrir a carta na Liga.
+
+Para diagnosticar de qualquer lugar:
+`https://<seu-site>/api/liga?nome=Pikachu&debug=1` mostra o status, os cabeçalhos da
+resposta e de onde o pedido saiu.
+
+### Preço anotado à mão
+
+Como o número do mercado brasileiro é justamente o que interessa, cada carta tem um
+campo **"Preço que você viu na Liga"**. Abre o link, olha o valor, anota uma vez.
+
+Esse número passa a valer mais que qualquer outro: aparece na lista, soma no total da
+coleção, vira a base da tabela de estados e entra no backup em Ajustes → Exportar.
+
 ---
 
 ## Estrutura

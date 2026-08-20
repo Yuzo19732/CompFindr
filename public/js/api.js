@@ -315,9 +315,21 @@ const Api = (function () {
   // Brasil), e passa. A função normal fica como segunda tentativa.
   const ROTAS_LIGA = ['/api/liga', FUNCS + '/liga'];
   let rotaLigaBoa = null;
+  let falhasLiga = 0;
+  let motivoLiga = '';
+
+  // Medido em 2026-08-20: publicado no Netlify, a Liga responde 403 com
+  // `cf-mitigated: challenge` — a tela "Just a moment..." do Cloudflare — tanto
+  // pela função comum (EUA) quanto pela borda (São Paulo). Não adianta ficar
+  // tentando a cada carta: depois de duas falhas seguidas o app desiste na
+  // sessão e passa a mostrar o link para o site deles.
+  const LIMITE_FALHAS = 2;
 
   async function liga(nome, num, total) {
     if (temFuncoes === false) return { resultados: [], indisponivel: true };
+    if (falhasLiga >= LIMITE_FALHAS) {
+      return { resultados: [], erro: motivoLiga, bloqueada: true };
+    }
 
     const p = new URLSearchParams({ nome: nome });
     if (num) p.set('num', String(num));
@@ -332,6 +344,7 @@ const Api = (function () {
         const json = await pegarJson(rotas[i] + qs, 25000);
         temFuncoes = true;
         rotaLigaBoa = rotas[i];
+        falhasLiga = 0;
         return json;
       } catch (e) {
         ultimoErro = e;
@@ -341,10 +354,13 @@ const Api = (function () {
     // Nenhuma rota respondeu: ou não há servidor (site aberto como arquivo),
     // ou as duas foram barradas.
     if (temFuncoes === null) temFuncoes = false;
+    falhasLiga++;
+    motivoLiga = String(ultimoErro && ultimoErro.message ? ultimoErro.message : ultimoErro);
     return {
       resultados: [],
-      erro: String(ultimoErro && ultimoErro.message ? ultimoErro.message : ultimoErro),
+      erro: motivoLiga,
       indisponivel: temFuncoes === false,
+      bloqueada: falhasLiga >= LIMITE_FALHAS,
     };
   }
 

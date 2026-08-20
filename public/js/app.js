@@ -147,7 +147,11 @@
   function mostrarPrecoConhecido(el, carta) {
     const cfg = Store.config();
     el.innerHTML = '';
-    if (carta.precoBRL != null) {
+    const meu = Store.precoManual(carta);
+    if (meu != null) {
+      el.innerHTML = '<div class="brl">' + brl(meu) + '</div>' +
+        '<div class="usd">seu preço</div>';
+    } else if (carta.precoBRL != null) {
       el.innerHTML = '<div class="brl">' + brl(carta.precoBRL) + '</div>' +
         '<div class="usd">LigaPokémon</div>';
     } else if (carta.precoUSD != null) {
@@ -232,6 +236,8 @@
   // editáveis em Ajustes, porque variam por carta e por época.
 
   function baseDeReferencia(carta, achado, cfg) {
+    const meu = Store.precoManual(carta);
+    if (meu != null) return { valor: meu, texto: 'preço que você anotou' };
     if (achado && achado.precoMed != null) {
       return { valor: achado.precoMed, texto: 'preço médio na LigaPokémon' };
     }
@@ -245,6 +251,57 @@
       return { valor: carta.precoEUR * cfg.eurBrl, texto: 'tendência do Cardmarket' };
     }
     return null;
+  }
+
+  // Campo onde a pessoa anota o preço em reais que viu na LigaPokémon. Existe
+  // porque o Cloudflare barra o servidor do site, então esse número não tem
+  // como chegar sozinho — mas ele é justamente o que interessa no mercado
+  // brasileiro, então vale anotar uma vez e reaproveitar em tudo.
+  function campoPrecoManual(carta, aoMudar) {
+    const caixa = document.createElement('div');
+    caixa.className = 'meu-preco';
+
+    const rotulo = document.createElement('label');
+    rotulo.textContent = 'Preço que você viu na Liga';
+    rotulo.htmlFor = 'in-meu-preco';
+
+    const linha = document.createElement('div');
+    linha.className = 'linha-meu-preco';
+
+    const cifra = document.createElement('span');
+    cifra.textContent = 'R$';
+
+    const campo = document.createElement('input');
+    campo.type = 'number';
+    campo.id = 'in-meu-preco';
+    campo.min = '0';
+    campo.step = '0.01';
+    campo.inputMode = 'decimal';
+    campo.placeholder = '0,00';
+    const atual = Store.precoManual(carta);
+    if (atual != null) campo.value = atual;
+
+    const salvar = document.createElement('button');
+    salvar.className = 'btn pequeno';
+    salvar.type = 'button';
+    salvar.textContent = 'Salvar';
+    salvar.addEventListener('click', function () {
+      const v = Store.salvarPrecoManual(carta, campo.value);
+      ['wishlist', 'colecao'].forEach(function (n) {
+        if (Store.tem(n, carta)) {
+          Store.atualizar(n, { id: carta.id, num: carta.num, total: carta.total, precoBRL: v });
+        }
+      });
+      avisar(v == null ? 'Preço apagado.' : 'Preço salvo: ' + brl(v));
+      if (aoMudar) aoMudar();
+    });
+
+    linha.appendChild(cifra);
+    linha.appendChild(campo);
+    linha.appendChild(salvar);
+    caixa.appendChild(rotulo);
+    caixa.appendChild(linha);
+    return caixa;
   }
 
   function blocoEstados(carta, achado, cfg) {
@@ -400,6 +457,14 @@
         moeda(carta.precoEUR, 'EUR') + ' × ' + cfg.eurBrl.toFixed(2)
       ));
     }
+
+    // Campo para anotar o preço em reais visto na Liga.
+    precos.appendChild(campoPrecoManual(carta, function () {
+      precoBRL = Store.precoManual(carta);
+      desenharAcoes();
+      const velho = precos.querySelector('.estados');
+      if (velho) velho.replaceWith(blocoEstados(carta, r.achado, Store.config()));
+    }));
 
     // Estimativa por estado de conservação.
     precos.appendChild(blocoEstados(carta, r.achado, cfg));
@@ -917,7 +982,9 @@
     let soma = 0;
     let contados = 0;
     cartas.forEach(function (c) {
-      if (c.precoBRL != null) { soma += c.precoBRL; contados++; }
+      const meu = Store.precoManual(c);
+      if (meu != null) { soma += meu; contados++; }
+      else if (c.precoBRL != null) { soma += c.precoBRL; contados++; }
       else if (c.precoUSD != null) { soma += c.precoUSD * cfg.usdBrl; contados++; }
     });
     const el = $('total-' + nome);

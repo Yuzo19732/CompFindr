@@ -12,6 +12,7 @@ const Store = (function () {
     wishlist: 'cc.wishlist',
     colecao: 'cc.colecao',
     config: 'cc.config',
+    precos: 'cc.precosBR',
   };
 
   // Quanto vale uma carta em cada estado de conservação, em relação a uma NM.
@@ -129,6 +130,35 @@ const Store = (function () {
     gravar(CHAVES[nome], atual);
   }
 
+  // --- preço anotado à mão -------------------------------------------------
+  //
+  // A LigaPokémon fica atrás do Cloudflare, que barra o servidor do site. Como
+  // não dá para trazer o preço em reais automaticamente, a pessoa pode abrir a
+  // carta na Liga (o link está a um toque) e anotar aqui o valor que viu.
+  //
+  // Esse número passa a valer mais que qualquer outro: aparece nas listas,
+  // soma no total da coleção e vira a base da tabela de estados.
+
+  function precosManuais() {
+    const v = ler(CHAVES.precos, {});
+    return v && typeof v === 'object' ? v : {};
+  }
+
+  function precoManual(carta) {
+    const p = precosManuais()[chaveDe(carta)];
+    return p && Number.isFinite(Number(p.valor)) ? Number(p.valor) : null;
+  }
+
+  function salvarPrecoManual(carta, valor) {
+    const todos = precosManuais();
+    const k = chaveDe(carta);
+    const n = Number(valor);
+    if (!Number.isFinite(n) || n <= 0) delete todos[k];
+    else todos[k] = { valor: n, em: Date.now() };
+    gravar(CHAVES.precos, todos);
+    return precoManual(carta);
+  }
+
   // --- exportar / importar -------------------------------------------------
 
   function exportar() {
@@ -139,6 +169,7 @@ const Store = (function () {
       wishlist: lista('wishlist'),
       colecao: lista('colecao'),
       config: config(),
+      precosBR: precosManuais(),
     };
   }
 
@@ -152,6 +183,7 @@ const Store = (function () {
     if (Array.isArray(dados.wishlist)) gravar(CHAVES.wishlist, dados.wishlist);
     if (Array.isArray(dados.colecao)) gravar(CHAVES.colecao, dados.colecao);
     if (dados.config) gravar(CHAVES.config, Object.assign({}, CONFIG_PADRAO, dados.config));
+    if (dados.precosBR) gravar(CHAVES.precos, dados.precosBR);
   }
 
   function apagarTudo() {
@@ -163,6 +195,8 @@ const Store = (function () {
     salvarConfig: salvarConfig,
     ESTADOS: ORDEM_ESTADOS,
     ESTADOS_PADRAO: ESTADOS_PADRAO,
+    precoManual: precoManual,
+    salvarPrecoManual: salvarPrecoManual,
     lista: lista,
     chaveDe: chaveDe,
     tem: tem,
