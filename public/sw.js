@@ -14,8 +14,6 @@ const CASCA = [
   '/css/style.css',
   '/js/store.js',
   '/js/api.js',
-  '/js/ocr.js',
-  '/js/scanner.js',
   '/js/app.js',
   '/manifest.webmanifest',
   '/icons/icon-192.png',

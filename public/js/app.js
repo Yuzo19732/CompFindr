@@ -1,12 +1,11 @@
 /* ==========================================================================
-   app.js — a cola entre câmera, OCR, preços e tela
+   app.js — a cola entre a busca, os preços e a tela
    ========================================================================== */
 
 (function () {
 
   const $ = function (id) { return document.getElementById(id); };
   const cacheLiga = new Map();   // evita repetir consulta da mesma carta
-  let ultimaLista = [];          // resultado do último scan/busca
 
   // --- formatação ----------------------------------------------------------
 
@@ -14,6 +13,7 @@
     if (n == null || !Number.isFinite(Number(n))) return null;
     return Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   }
+
   function moeda(n, cod) {
     if (n == null || !Number.isFinite(Number(n))) return null;
     return Number(n).toLocaleString('pt-BR', { style: 'currency', currency: cod });
@@ -51,14 +51,11 @@
   });
 
   // --- preço da LigaPokémon ------------------------------------------------
+  //
+  // Cada consulta é uma leitura de página inteira do site deles. Disparar uma
+  // por carta de uma vez seria abusivo e lento, então no máximo duas correm ao
+  // mesmo tempo; o resto espera a vez.
 
-  function chaveLiga(carta) {
-    return (carta.nome || '') + '|' + (carta.num || '') + '|' + (carta.total || '');
-  }
-
-  // Cada consulta à LigaPokémon é uma leitura de página inteira do site deles.
-  // Disparar 24 de uma vez seria abusivo e lento, então no máximo duas correm
-  // ao mesmo tempo; o resto espera a vez.
   let emVoo = 0;
   const fila = [];
 
@@ -77,6 +74,10 @@
     });
   }
 
+  function chaveLiga(carta) {
+    return (carta.nome || '') + '|' + (carta.num || '') + '|' + (carta.total || '');
+  }
+
   async function precoLiga(carta) {
     const k = chaveLiga(carta);
     if (cacheLiga.has(k)) return cacheLiga.get(k);
@@ -84,9 +85,8 @@
     const promessa = comLimite(function () {
       return Api.liga(carta.nome, carta.num, carta.total);
     }).then(function (r) {
-      const achado = (r.resultados || [])[0] || null;
       return {
-        achado: achado,
+        achado: (r.resultados || [])[0] || null,
         // Serve mesmo sem anúncio nenhum: é por onde a pessoa confere a carta
         // na Liga por conta própria.
         urlBusca: r.urlBusca || '',
@@ -106,59 +106,82 @@
     b.className = 'carta';
     b.type = 'button';
 
-    const img = document.createElement('img');
-    img.src = carta.imagem || '';
-    img.alt = carta.nome || 'carta';
-    img.loading = 'lazy';
+    const arte = document.createElement('div');
+    arte.className = 'arte';
+    if (carta.imagem) {
+      const img = document.createElement('img');
+      img.src = carta.imagem;
+      img.alt = carta.nome || 'carta';
+      img.loading = 'lazy';
+      img.addEventListener('error', function () {
+        img.remove();
+        arte.innerHTML = '<span class="sem-imagem">▦</span>';
+      });
+      arte.appendChild(img);
+    } else {
+      arte.innerHTML = '<span class="sem-imagem">▦</span>';
+    }
 
-    const meio = document.createElement('div');
+    const info = document.createElement('div');
+    info.className = 'info';
+
     const nome = document.createElement('div');
     nome.className = 'nome';
     nome.textContent = carta.nome || '(sem nome)';
+
     const meta = document.createElement('div');
     meta.className = 'meta';
     meta.textContent = [
-      carta.set,
       carta.num ? carta.num + '/' + (carta.total || '?') : '',
-      carta.raridade,
+      carta.set,
     ].filter(Boolean).join(' · ');
-    meio.appendChild(nome);
-    meio.appendChild(meta);
 
     const preco = document.createElement('div');
     preco.className = 'preco';
     preco.innerHTML = '<div class="carregando">buscando…</div>';
 
-    b.appendChild(img);
-    b.appendChild(meio);
-    b.appendChild(preco);
+    info.appendChild(nome);
+    info.appendChild(meta);
+    info.appendChild(preco);
+    b.appendChild(arte);
+    b.appendChild(info);
     b.addEventListener('click', function () { abrirDetalhe(carta); });
 
-    if (extras && extras.buscarLiga) {
-      preencherPreco(preco, carta);
-    } else {
-      mostrarPrecoConhecido(preco, carta);
+    if (extras && extras.buscarLiga) preencherPreco(preco, carta);
+    else mostrarPrecoConhecido(preco, carta);
+
+    if (extras && extras.removerDe) {
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'remover';
+      x.textContent = '✕';
+      x.title = 'Remover';
+      x.setAttribute('aria-label', 'Remover ' + (carta.nome || 'carta'));
+      x.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        Store.remover(extras.removerDe, carta);
+        desenharLista(extras.removerDe);
+        avisar('Removido.');
+      });
+      b.appendChild(x);
     }
 
     return b;
   }
 
-  // Preço sem ir na rede: o que já está salvo na carta.
+  // Preço sem ir na rede: o que já está guardado sobre a carta.
   function mostrarPrecoConhecido(el, carta) {
     const cfg = Store.config();
-    el.innerHTML = '';
     const meu = Store.precoManual(carta);
+
     if (meu != null) {
-      el.innerHTML = '<div class="brl">' + brl(meu) + '</div>' +
-        '<div class="usd">seu preço</div>';
+      el.innerHTML = '<div class="brl">' + brl(meu) + '</div><div class="fonte">seu preço</div>';
     } else if (carta.precoBRL != null) {
-      el.innerHTML = '<div class="brl">' + brl(carta.precoBRL) + '</div>' +
-        '<div class="usd">LigaPokémon</div>';
+      el.innerHTML = '<div class="brl">' + brl(carta.precoBRL) + '</div><div class="fonte">LigaPokémon</div>';
     } else if (carta.precoUSD != null) {
-      el.innerHTML = '<div class="brl">' + brl(carta.precoUSD * cfg.usdBrl) + '</div>' +
-        '<div class="usd">TCGPlayer</div>';
+      el.innerHTML = '<div class="brl">' + brl(carta.precoUSD * cfg.usdBrl) + '</div><div class="fonte">TCGPlayer</div>';
     } else {
-      el.innerHTML = '<div class="usd">toque para ver</div>';
+      el.innerHTML = '<div class="fonte">toque para ver</div>';
     }
   }
 
@@ -167,25 +190,29 @@
       const r = await precoLiga(carta);
       if (r.achado && r.achado.precoMin != null) {
         el.innerHTML = '<div class="brl">' + brl(r.achado.precoMin) + '</div>' +
-          '<div class="usd">médio ' + (brl(r.achado.precoMed) || '—') + '</div>';
+          '<div class="fonte">LigaPokémon</div>';
         return;
       }
     } catch (e) { /* cai para o preço já conhecido */ }
     mostrarPrecoConhecido(el, carta);
   }
 
-  // `buscarLiga` só liga para listas curtas (o resultado de um scan). Numa
-  // busca com 24 cartas isso viraria 24 leituras do site da Liga de uma vez.
-  function desenharResultados(el, cartas, vazioTexto) {
+  function vazio(el, icone, texto) {
     el.innerHTML = '';
-    if (!cartas.length) {
-      const p = document.createElement('p');
-      p.className = 'vazio';
-      p.textContent = vazioTexto;
-      el.appendChild(p);
-      return;
-    }
-    const buscarLiga = cartas.length <= 3;
+    const p = document.createElement('p');
+    p.className = 'vazio';
+    p.innerHTML = '<span class="ico">' + icone + '</span>';
+    p.appendChild(document.createTextNode(texto));
+    el.appendChild(p);
+  }
+
+  // `buscarLiga` só liga para listas curtas. Numa busca com 24 cartas isso
+  // viraria 24 leituras do site da Liga de uma vez.
+  function desenharResultados(el, cartas, vazioTexto) {
+    if (!cartas.length) { vazio(el, '⌕', vazioTexto); return; }
+
+    el.innerHTML = '';
+    const buscarLiga = cartas.length <= 3 && Store.config().consultarLiga;
     cartas.forEach(function (c) { el.appendChild(elemCarta(c, { buscarLiga: buscarLiga })); });
     if (!buscarLiga) completarPrecos(el, cartas);
   }
@@ -194,7 +221,7 @@
   // tela em menos de meio segundo. Os preços entram logo depois, em paralelo.
   function completarPrecos(el, cartas) {
     const caixas = el.querySelectorAll('.carta .preco');
-    cartas.slice(0, 14).forEach(function (c, i) {
+    cartas.slice(0, 16).forEach(function (c, i) {
       if (c.completa || !c.id) return;
       Api.detalhar(c.id).then(function (cheia) {
         if (!cheia) return;
@@ -209,9 +236,14 @@
   function linhaPreco(rotuloForte, rotuloFraco, valor, sub, principal) {
     const d = document.createElement('div');
     d.className = 'preco-linha' + (principal ? ' principal' : '');
+
     const r = document.createElement('div');
     r.className = 'rotulo';
-    r.innerHTML = '<b>' + rotuloForte + '</b>' + (rotuloFraco || '');
+    const b = document.createElement('b');
+    b.textContent = rotuloForte;
+    r.appendChild(b);
+    r.appendChild(document.createTextNode(rotuloFraco || ''));
+
     const v = document.createElement('div');
     v.className = 'valor' + (principal ? ' verde' : '');
     v.textContent = valor;
@@ -220,37 +252,10 @@
       s.textContent = sub;
       v.appendChild(s);
     }
+
     d.appendChild(r);
     d.appendChild(v);
     return d;
-  }
-
-  // --- preço por estado de conservação -------------------------------------
-  //
-  // A LigaPokémon publica o preço de cada anúncio como IMAGEM (sprite de CSS),
-  // de propósito, para não ser lido por programa. Então não dá para trazer o
-  // preço real de cada estado de lá, e inventar que dá seria pior.
-  //
-  // O que este bloco faz é aplicar as proporções de mercado sobre um preço de
-  // referência, deixando claro que é estimativa. As proporções ficam
-  // editáveis em Ajustes, porque variam por carta e por época.
-
-  function baseDeReferencia(carta, achado, cfg) {
-    const meu = Store.precoManual(carta);
-    if (meu != null) return { valor: meu, texto: 'preço que você anotou' };
-    if (achado && achado.precoMed != null) {
-      return { valor: achado.precoMed, texto: 'preço médio na LigaPokémon' };
-    }
-    if (achado && achado.precoMin != null) {
-      return { valor: achado.precoMin, texto: 'menor preço na LigaPokémon' };
-    }
-    if (carta.precoUSD != null) {
-      return { valor: carta.precoUSD * cfg.usdBrl, texto: 'preço de mercado do TCGPlayer' };
-    }
-    if (carta.precoEUR != null) {
-      return { valor: carta.precoEUR * cfg.eurBrl, texto: 'tendência do Cardmarket' };
-    }
-    return null;
   }
 
   // Campo onde a pessoa anota o preço em reais que viu na LigaPokémon. Existe
@@ -269,6 +274,7 @@
     linha.className = 'linha-meu-preco';
 
     const cifra = document.createElement('span');
+    cifra.className = 'cifra';
     cifra.textContent = 'R$';
 
     const campo = document.createElement('input');
@@ -304,6 +310,34 @@
     return caixa;
   }
 
+  // --- preço por estado de conservação -------------------------------------
+  //
+  // A LigaPokémon publica o preço de cada anúncio como IMAGEM (sprite de CSS),
+  // de propósito, para não ser lido por programa. Então não dá para trazer o
+  // preço real de cada estado de lá, e inventar que dá seria pior.
+  //
+  // O que este bloco faz é aplicar as proporções de mercado sobre um preço de
+  // referência, deixando claro que é estimativa. As proporções ficam editáveis
+  // em Ajustes, porque variam por carta e por época.
+
+  function baseDeReferencia(carta, achado, cfg) {
+    const meu = Store.precoManual(carta);
+    if (meu != null) return { valor: meu, texto: 'preço que você anotou' };
+    if (achado && achado.precoMed != null) {
+      return { valor: achado.precoMed, texto: 'preço médio na LigaPokémon' };
+    }
+    if (achado && achado.precoMin != null) {
+      return { valor: achado.precoMin, texto: 'menor preço na LigaPokémon' };
+    }
+    if (carta.precoUSD != null) {
+      return { valor: carta.precoUSD * cfg.usdBrl, texto: 'preço de mercado do TCGPlayer' };
+    }
+    if (carta.precoEUR != null) {
+      return { valor: carta.precoEUR * cfg.eurBrl, texto: 'tendência do Cardmarket' };
+    }
+    return null;
+  }
+
   function blocoEstados(carta, achado, cfg) {
     const caixa = document.createElement('div');
     caixa.className = 'estados';
@@ -320,13 +354,24 @@
     caixa.appendChild(titulo);
 
     Store.ESTADOS.forEach(function (e) {
-      const fator = cfg.estados[e.sigla];
       const linha = document.createElement('div');
       linha.className = 'estado-linha' + (e.sigla === 'NM' ? ' referencia' : '');
-      linha.innerHTML =
-        '<span class="sigla">' + e.sigla + '</span>' +
-        '<span class="descricao">' + e.nome + '</span>' +
-        '<span class="valor">' + (brl(base.valor * fator) || '—') + '</span>';
+
+      const sigla = document.createElement('span');
+      sigla.className = 'sigla';
+      sigla.textContent = e.sigla;
+
+      const desc = document.createElement('span');
+      desc.className = 'descricao';
+      desc.textContent = e.nome;
+
+      const valor = document.createElement('span');
+      valor.className = 'valor';
+      valor.textContent = brl(base.valor * cfg.estados[e.sigla]) || '—';
+
+      linha.appendChild(sigla);
+      linha.appendChild(desc);
+      linha.appendChild(valor);
       caixa.appendChild(linha);
     });
 
@@ -344,6 +389,7 @@
     const cfg = Store.config();
     const alvo = $('modal-conteudo');
     $('modal').classList.remove('oculto');
+    alvo.innerHTML = '';
 
     // Carta vinda da busca por nome chega enxuta: sem preço, raridade nem
     // artista. Completa agora, que é quando esses dados vão aparecer.
@@ -354,21 +400,27 @@
       } catch (e) { /* mostra o que tem */ }
     }
 
-    alvo.innerHTML = '';
-
     const topo = document.createElement('div');
     topo.className = 'detalhe-topo';
-    topo.innerHTML =
-      '<img src="' + (carta.imagemGrande || carta.imagem || '') + '" alt="">' +
-      '<div><h2 id="modal-titulo"></h2><div class="meta"></div></div>';
-    topo.querySelector('h2').textContent = carta.nome || '(sem nome)';
-    topo.querySelector('.meta').textContent = [
+    const img = document.createElement('img');
+    img.src = carta.imagemGrande || carta.imagem || '';
+    img.alt = '';
+    const lado = document.createElement('div');
+    const h2 = document.createElement('h2');
+    h2.id = 'modal-titulo';
+    h2.textContent = carta.nome || '(sem nome)';
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = [
       carta.set,
       carta.num ? 'nº ' + carta.num + '/' + (carta.total || '?') : '',
       carta.raridade,
       carta.artista ? 'arte: ' + carta.artista : '',
     ].filter(Boolean).join('\n');
-    topo.querySelector('.meta').style.whiteSpace = 'pre-line';
+    lado.appendChild(h2);
+    lado.appendChild(meta);
+    topo.appendChild(img);
+    topo.appendChild(lado);
     alvo.appendChild(topo);
 
     const precos = document.createElement('div');
@@ -380,8 +432,6 @@
     acoes.className = 'acoes-detalhe';
     alvo.appendChild(acoes);
 
-    // Preenchido quando a consulta à Liga volta. Guardado junto da carta para
-    // a wishlist somar em reais sem precisar consultar tudo de novo.
     let precoBRL = null;
 
     function desenharAcoes() {
@@ -394,9 +444,7 @@
         b.type = 'button';
         b.textContent = (dentro ? 'Remover da ' : 'Adicionar à ') + par[1];
         b.addEventListener('click', function () {
-          const comPreco = precoBRL == null
-            ? carta
-            : Object.assign({}, carta, { precoBRL: precoBRL });
+          const comPreco = precoBRL == null ? carta : Object.assign({}, carta, { precoBRL: precoBRL });
           const agora = Store.alternar(nome, comPreco);
           avisar(agora ? 'Adicionado à ' + par[1] : 'Removido da ' + par[1]);
           desenharAcoes();
@@ -406,11 +454,10 @@
     }
     desenharAcoes();
 
-    // Preços — a LigaPokémon é a referência principal, em reais.
-    let r = { achado: null, indisponivel: false };
-    try {
-      r = await precoLiga(carta);
-    } catch (e) { /* segue com o que tiver */ }
+    let r = { achado: null, urlBusca: '', indisponivel: false, erro: null };
+    if (cfg.consultarLiga) {
+      try { r = await precoLiga(carta); } catch (e) { /* segue com o que tiver */ }
+    }
 
     precos.innerHTML = '';
 
@@ -424,22 +471,19 @@
         'médio ' + (brl(l.precoMed) || '—') + '  ·  maior ' + (brl(l.precoMax) || '—'),
         true
       ));
-    } else if (r.indisponivel || r.erro) {
+    } else if (cfg.consultarLiga) {
       const p = document.createElement('p');
       p.className = 'ajuda';
       // Dois problemas diferentes, que confundem se forem descritos igual:
       // não existe servidor, ou existe mas a Liga recusou o pedido dele.
       p.textContent = /403|502|respondeu/.test(String(r.erro || ''))
         ? 'A LigaPokémon está recusando o pedido do servidor do site (ela usa Cloudflare, ' +
-          'que barra endereços de nuvem). Use o link abaixo para ver o preço em reais direto no site deles.'
-        : 'O preço da LigaPokémon precisa do servidor do site. Publique no Netlify ou rode com "npm start".';
-      precos.appendChild(p);
-    } else {
-      const p = document.createElement('p');
-      p.className = 'ajuda';
-      p.textContent = r.achado
-        ? 'A LigaPokémon tem essa carta cadastrada, mas ninguém está vendendo agora.'
-        : 'Sem anúncio dessa carta na LigaPokémon agora.';
+          'que barra endereços de nuvem). Abra pelo link abaixo e anote o preço aqui.'
+        : (r.indisponivel
+          ? 'O preço da LigaPokémon precisa do servidor do site.'
+          : (r.achado
+            ? 'A LigaPokémon tem essa carta cadastrada, mas ninguém está vendendo agora.'
+            : 'Sem anúncio dessa carta na LigaPokémon agora.'));
       precos.appendChild(p);
     }
 
@@ -458,7 +502,6 @@
       ));
     }
 
-    // Campo para anotar o preço em reais visto na Liga.
     precos.appendChild(campoPrecoManual(carta, function () {
       precoBRL = Store.precoManual(carta);
       desenharAcoes();
@@ -466,23 +509,22 @@
       if (velho) velho.replaceWith(blocoEstados(carta, r.achado, Store.config()));
     }));
 
-    // Estimativa por estado de conservação.
     precos.appendChild(blocoEstados(carta, r.achado, cfg));
 
     // O link vai sempre, tenha anúncio ou não — é assim que dá para conferir a
     // carta na Liga mesmo quando ninguém está vendendo.
-    const destino = (r.achado && r.achado.url) || r.urlBusca;
-    if (destino) {
-      const a = document.createElement('a');
-      a.className = 'link-liga';
-      a.href = destino;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.textContent = (r.achado && r.achado.precoMin != null)
-        ? 'Ver anúncios na LigaPokémon →'
-        : 'Abrir essa carta na LigaPokémon →';
-      precos.appendChild(a);
-    }
+    const destino = (r.achado && r.achado.url) || r.urlBusca ||
+      ('https://www.ligapokemon.com.br/?view=cards/search&card=' +
+        encodeURIComponent(carta.nome || ''));
+    const a = document.createElement('a');
+    a.className = 'link-liga';
+    a.href = destino;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = (r.achado && r.achado.precoMin != null)
+      ? 'Ver anúncios na LigaPokémon →'
+      : 'Abrir essa carta na LigaPokémon →';
+    precos.appendChild(a);
 
     // Se a carta já estava salva, aproveita e atualiza o preço guardado.
     if (precoBRL != null) {
@@ -501,435 +543,62 @@
     if (e.key === 'Escape') $('modal').classList.add('oculto');
   });
 
-  // --- escanear ------------------------------------------------------------
-
-  const elStatus = $('status-scan');
-  const elBarra = $('barra-progresso');
-  const elProg = $('progresso');
-
-  function progresso(fracao) {
-    if (fracao == null) {
-      elBarra.classList.add('oculto');
-      return;
-    }
-    elBarra.classList.remove('oculto');
-    elProg.style.width = Math.round(fracao * 100) + '%';
-  }
-
-  const DICAS = {
-    numero: 'Encha a tarja branca com o número do rodapé (ex.: 125/197). Quanto maior o número aparecer, melhor.',
-    carta: 'Encaixe a carta inteira na moldura. Só funciona bem se a câmera for boa — na dúvida, use "Só o número".',
-  };
-
-  function mostrarDica() {
-    const m = Scanner.modoAtual();
-    const el = $('dica-modo');
-    el.textContent = DICAS[m];
-    el.hidden = false;
-  }
-
-  $('btn-camera').addEventListener('click', async function () {
-    try {
-      status(elStatus, 'Pedindo acesso à câmera…');
-      const info = await Scanner.ligar($('video'), $('guia'), $('camera-caixa'));
-      $('camera-vazia').classList.add('oculto');
-      $('barra-camera').hidden = false;
-      $('modos').hidden = false;
-      $('btn-lanterna').hidden = !info.temLanterna;
-      mostrarDica();
-
-      if (info.temZoom && info.zoom) {
-        const z = $('in-zoom');
-        z.min = info.zoom.min;
-        z.max = info.zoom.max;
-        z.step = (info.zoom.max - info.zoom.min) / 20;
-        z.value = info.zoom.atual;
-        $('linha-zoom').hidden = false;
-      }
-
-      const r = info.resolucao;
-      status(elStatus, r ? 'Câmera em ' + r.w + '×' + r.h + '. ' + DICAS[Scanner.modoAtual()] : '');
-    } catch (e) {
-      status(elStatus, e.message || String(e), 'erro');
-    }
-  });
-
-  $('btn-parar').addEventListener('click', function () {
-    Scanner.desligar();
-    $('camera-vazia').classList.remove('oculto');
-    $('barra-camera').hidden = true;
-    $('modos').hidden = true;
-    $('linha-zoom').hidden = true;
-    $('dica-modo').hidden = true;
-    status(elStatus, '');
-  });
-
-  document.querySelectorAll('.modo').forEach(function (b) {
-    b.addEventListener('click', function () {
-      Scanner.definirModo(b.dataset.modo);
-      document.querySelectorAll('.modo').forEach(function (o) {
-        o.classList.toggle('ativo', o === b);
-      });
-      mostrarDica();
-    });
-  });
-
-  $('in-zoom').addEventListener('input', function () {
-    Scanner.definirZoom($('in-zoom').value);
-  });
-
-  $('btn-lanterna').addEventListener('click', async function () {
-    const ligada = await Scanner.alternarLanterna();
-    $('btn-lanterna').classList.toggle('ativo', ligada);
-  });
-
-  $('btn-capturar').addEventListener('click', async function () {
-    const btn = $('btn-capturar');
-    btn.disabled = true;
-    try {
-      const captura = Scanner.capturar();
-      await analisar(captura);
-    } catch (e) {
-      status(elStatus, e.message || String(e), 'erro');
-    } finally {
-      btn.disabled = false;
-      progresso(null);
-    }
-  });
-
-  // --- foto tirada pelo app de câmera do celular --------------------------
+  // --- busca ---------------------------------------------------------------
   //
-  // A câmera nativa tira foto em resolução muito maior que o vídeo e com foco
-  // melhor. Vale como saída quando o modo ao vivo não consegue ler.
+  // Um campo só. Se o que foi digitado parece o número do rodapé — "125/197",
+  // "125 197", "125-197" — vale como número; senão, vale como nome. Separar em
+  // dois campos só obrigaria a pessoa a escolher antes de digitar.
 
-  $('btn-foto').addEventListener('click', function () { $('in-foto').click(); });
-
-  $('in-foto').addEventListener('change', async function (e) {
-    const arquivo = e.target.files && e.target.files[0];
-    if (!arquivo) return;
-    e.target.value = '';
-
-    status(elStatus, 'Abrindo a foto…');
-    try {
-      const url = URL.createObjectURL(arquivo);
-      const img = new Image();
-      img.src = url;
-      await img.decode();
-      URL.revokeObjectURL(url);
-
-      const captura = Scanner.daImagem(img);
-      await analisar(captura);
-    } catch (err) {
-      status(elStatus, 'Não consegui abrir essa foto: ' + (err.message || err), 'erro');
-    } finally {
-      progresso(null);
-    }
-  });
-
-  // --- diagnóstico ---------------------------------------------------------
-  //
-  // Quando a leitura falha, é impossível adivinhar o motivo sem ver o que o
-  // OCR recebeu. Este painel mostra exatamente isso.
-
-  function mostrarDiagnostico(leitura, captura) {
-    const d = $('diagnostico');
-    d.classList.remove('oculto');
-    const r = captura.resolucao;
-    $('diag-resumo').textContent =
-      'Imagem de ' + r.w + '×' + r.h + ' · ' + leitura.leituras + ' leitura(s) · ' +
-      'candidatos: ' + (leitura.candidatos.slice(0, 5).map(function (c) {
-        return c.num + '/' + c.total;
-      }).join(', ') || 'nenhum');
-    $('diag-texto').textContent = 'Texto lido: ' + (leitura.texto || '(nada)');
-    if (leitura.recorteVisto) $('diag-imagem').src = leitura.recorteVisto;
+  function lerNumero(termo) {
+    const m = String(termo || '').trim().match(/^(\d{1,3})\s*[\/\-\s]\s*(\d{1,3})$/);
+    if (!m) return null;
+    return { num: String(parseInt(m[1], 10)), total: String(parseInt(m[2], 10)) };
   }
 
-  // --- desempate pelo nome -------------------------------------------------
-
-  function soLetras(s) {
-    return String(s || '').toLowerCase().replace(/[^a-z]/g, '');
-  }
-
-  // Maior trecho em comum entre duas palavras. É o que resiste ao lixo do OCR:
-  // "jiFPikachy" e "pikachu" compartilham "pikach".
-  function maiorTrechoComum(a, b) {
-    if (!a || !b) return 0;
-    let melhor = 0;
-    const linha = new Array(b.length + 1).fill(0);
-    for (let i = 1; i <= a.length; i++) {
-      let anterior = 0;
-      for (let j = 1; j <= b.length; j++) {
-        const guardado = linha[j];
-        if (a[i - 1] === b[j - 1]) {
-          linha[j] = anterior + 1;
-          if (linha[j] > melhor) melhor = linha[j];
-        } else {
-          linha[j] = 0;
-        }
-        anterior = guardado;
-      }
-    }
-    return melhor;
-  }
-
-  // Escolhe a carta cujo nome mais se parece com o que o OCR leu — mas só
-  // quando a diferença for clara. Na dúvida, devolve null e o app mostra
-  // todas as opções para a pessoa escolher.
-  function melhorPorNome(cartas, textoLido) {
-    const lido = soLetras(textoLido);
-    if (lido.length < 4) return null;
-
-    const notas = cartas.map(function (c) {
-      const nome = soLetras(c.nome);
-      if (!nome) return { carta: c, nota: 0 };
-      return { carta: c, nota: maiorTrechoComum(lido, nome) / nome.length };
-    }).sort(function (a, b) { return b.nota - a.nota; });
-
-    const primeiro = notas[0];
-    const segundo = notas[1] || { nota: 0 };
-    if (primeiro.nota >= 0.5 && primeiro.nota - segundo.nota >= 0.15) return primeiro.carta;
-    return null;
-  }
-
-  async function analisar(captura) {
-    const cfg = Store.config();
-
-    status(elStatus, 'Preparando o leitor…');
-    progresso(0.05);
-    await Ocr.preparar(function (etapa, fracao) {
-      if (etapa && etapa.indexOf('load') !== -1) {
-        status(elStatus, 'Baixando o leitor de texto (só na primeira vez)…');
-        progresso(0.05 + fracao * 0.30);
-      }
-    });
-
-    status(elStatus, 'Lendo o número…');
-    const faixas = captura.faixas || captura.numero;
-    const leitura = await Ocr.lerNumero(captura.quadro, faixas, function (f) {
-      progresso(0.35 + f * 0.30);
-    });
-
-    mostrarDiagnostico(leitura, captura);
-
-    if (!leitura.candidatos.length) {
-      status(elStatus,
-        'Não consegui ler o número. Abra "Ver o que a câmera leu" logo abaixo: se o recorte não mostrar ' +
-        'o número grande e nítido, aproxime mais ou use o zoom. Também dá para digitar na mão.', 'erro');
-      desenharResultados($('resultado-scan'), [], '');
-      return;
-    }
-
-    // O OCR erra o traço "/" às vezes, então ele devolve várias leituras
-    // possíveis. Quem decide qual é a certa é a base: a primeira que existir
-    // de verdade ganha.
-    progresso(0.7);
-
-    // Antes de gastar consulta, joga fora o impossível: total que nenhuma
-    // coleção do jogo tem.
-    let candidatos = leitura.candidatos;
-    try {
-      const totais = await Api.totaisConhecidos();
-      if (totais) {
-        const filtrados = candidatos.filter(function (c) { return totais.has(Number(c.total)); });
-        if (filtrados.length) candidatos = filtrados;
-      }
-    } catch (e) { /* sem a lista, tenta todos mesmo */ }
-
-    // Consultar o banco custa ~200ms, então dá para testar os candidatos em
-    // paralelo em vez de um a um. Vence o de melhor posição que existir.
-    const tentar = candidatos.slice(0, 6);
-    status(elStatus, 'Conferindo ' + tentar.map(function (c) {
-      return c.num + '/' + c.total;
-    }).slice(0, 3).join(', ') + '…');
-
-    const respostas = await Promise.all(tentar.map(function (c) {
-      return Api.identificarPorNumero(c.num, c.total, '')
-        .then(function (r) { return { c: c, cartas: r.cartas || [] }; })
-        .catch(function () { return { c: c, cartas: [] }; });
-    }));
-
-    const comCartas = respostas.filter(function (r) { return r.cartas.length; });
-
-    // Reúne tudo que o número achou.
-    let opcoes = [];
-    comCartas.forEach(function (r) {
-      r.cartas.forEach(function (c) { opcoes.push({ carta: c, lido: r.c, via: 'numero' }); });
-    });
-
-    // --- conferência pelo nome --------------------------------------------
-    //
-    // Só o número não basta. Se o OCR perder um dígito e ler "25/197" em vez
-    // de "125/197", as duas cartas existem, e o app entregaria a errada com
-    // toda a confiança. O nome resolve isso de duas formas: descarta a carta
-    // errada e, melhor ainda, encontra a certa — uma busca por "harizard"
-    // filtrada pelos totais lidos chega em Charizard ex 125/197.
-
-    let nomeLido = '';
-    if (cfg.lerNome && captura.nome) {
-      status(elStatus, 'Conferindo pelo nome da carta…');
-      progresso(0.82);
-      try {
-        nomeLido = (await Ocr.lerNome(captura.quadro, captura.nome)).texto || '';
-      } catch (e) { /* segue só com o número */ }
-    }
-
-    const pedaco = pedacoDeNome(nomeLido);
-    if (pedaco) {
-      const totaisLidos = {};
-      tentar.forEach(function (c) { totaisLidos[c.total] = true; });
-      try {
-        const porNome = await Api.buscarPorNome(pedaco, 60);
-        (porNome.cartas || []).forEach(function (c) {
-          if (!totaisLidos[c.total]) return;
-          if (opcoes.some(function (o) { return o.carta.id === c.id; })) return;
-          opcoes.push({ carta: c, lido: { num: c.num, total: c.total }, via: 'nome' });
-        });
-      } catch (e) { /* sem essa ajuda, segue com o número */ }
-    }
-
-    if (!opcoes.length) {
-      const tentados = tentar.slice(0, 3)
-        .map(function (c) { return c.num + '/' + c.total; }).join(', ');
-      status(elStatus,
-        'Li algo parecido com ' + tentados + ', mas nenhuma dessas cartas existe na base. ' +
-        'Veja o recorte em "Ver o que a câmera leu" — provavelmente saiu pequeno ou borrado.', 'erro');
-      desenharResultados($('resultado-scan'), [], '');
-      return;
-    }
-
-    const numsLidos = tentar.map(function (c) { return c.num; });
-    const filtrou = pedaco ? ordenarOpcoes(opcoes, nomeLido, numsLidos) : false;
-    let cartas = opcoes.map(function (o) { return o.carta; });
-    const escolhida = cartas.length === 1 ? cartas[0] : null;
-    const lido = opcoes[0].lido;
-
-    progresso(1);
-    ultimaLista = cartas;
-
-    if (cartas.length === 1) {
-      const c = cartas[0];
-      status(elStatus,
-        'Achei: ' + c.nome + ' — ' + c.set + ' (' + c.num + '/' + c.total + ')' +
-        (filtrou ? ', conferido pelo nome.' : '.') +
-        (!pedaco ? ' Não consegui ler o nome, então confira se é essa mesmo.' : ''),
-        'bom');
-    } else if (filtrou) {
-      status(elStatus, 'O nome bate com ' + cartas.length + ' cartas (mesma carta em artes ' +
-        'diferentes). A primeira é a mais provável — confira o número no rodapé:', 'bom');
-    } else {
-      status(elStatus, 'Achei ' + cartas.length + ' possibilidades para ' +
-        lido.num + '/' + lido.total + '. Escolha a certa:', 'bom');
-    }
-
-    desenharResultados($('resultado-scan'), cartas, '');
-    if (cartas.length === 1) abrirDetalhe(cartas[0]);
-  }
-
-  // Reordena as opções no lugar, usando o nome lido e o número lido, e joga
-  // fora o que o nome contradiz. Devolve true se conseguiu filtrar por nome.
-  //
-  // Por que o número entra como segundo critério: uma carta como "Charizard ex"
-  // aparece 4 vezes na mesma coleção (artes alternativas), com nomes idênticos.
-  // O nome empata, então quem desempata é a semelhança do número — se o OCR
-  // leu "25", o 125 é bem mais provável que o 228, porque "25" termina o 125.
-  function ordenarOpcoes(opcoes, nomeLido, numsLidos) {
-    const lido = soLetras(nomeLido);
-
-    opcoes.forEach(function (o) {
-      const nome = soLetras(o.carta.nome);
-      o.notaNome = nome ? maiorTrechoComum(lido, nome) / nome.length : 0;
-      o.notaNum = 0;
-      const num = String(o.carta.num || '');
-      numsLidos.forEach(function (n) {
-        if (!n) return;
-        if (num === n) o.notaNum = Math.max(o.notaNum, 3);
-        else if (num.length > n.length && num.slice(-n.length) === n) o.notaNum = Math.max(o.notaNum, 2);
-        else if (num.indexOf(n) !== -1) o.notaNum = Math.max(o.notaNum, 1);
-      });
-    });
-
-    // "Raichu" e "Pikachu" dividem o trecho "chu", então um corte fixo deixa
-    // os dois passarem. O corte também é relativo ao melhor: quem ficou bem
-    // atrás do primeiro colocado sai.
-    const melhorNota = opcoes.reduce(function (m, o) { return Math.max(m, o.notaNome); }, 0);
-    const corte = Math.max(0.5, melhorNota - 0.2);
-    const bons = opcoes.filter(function (o) { return o.notaNome >= corte; });
-    const usar = bons.length ? bons : opcoes;
-
-    // O nome manda. O número só desempata entre nomes praticamente iguais —
-    // é o caso das artes alternativas, que têm o mesmo nome e números
-    // diferentes.
-    usar.sort(function (a, b) {
-      const dif = b.notaNome - a.notaNome;
-      if (Math.abs(dif) > 0.12) return dif;
-      if (b.notaNum !== a.notaNum) return b.notaNum - a.notaNum;
-      return dif;
-    });
-
-    // Cópia antes de esvaziar: quando não há nome bom, `usar` É o próprio
-    // `opcoes`, e limpar um limparia o outro.
-    const ordenadas = usar.slice();
-    opcoes.length = 0;
-    ordenadas.forEach(function (o) { opcoes.push(o); });
-
-    // true = o nome foi útil, dá para confiar mais no resultado.
-    return bons.length > 0;
-  }
-
-  // Tira do texto sujo do OCR um pedaço que sirva de busca. A busca da base é
-  // por substring, então "harizard" já encontra Charizard.
-  const RUIDO = ['stage', 'basic', 'evolves', 'from', 'illus', 'pokemon', 'trainer',
-    'energy', 'ability', 'rule', 'when', 'your', 'this'];
-
-  function pedacoDeNome(texto) {
-    const palavras = String(texto || '').toLowerCase().match(/[a-z]{4,}/g) || [];
-    const uteis = palavras.filter(function (p) { return RUIDO.indexOf(p) === -1; });
-    if (!uteis.length) return '';
-    return uteis.sort(function (a, b) { return b.length - a.length; })[0];
-  }
-
-  // --- identificação manual ------------------------------------------------
-
-  $('btn-manual').addEventListener('click', async function () {
-    const num = $('in-num').value.trim();
-    const total = $('in-total').value.trim();
-    const nome = $('in-nome-manual').value.trim();
-
-    if (!num) { status(elStatus, 'Digite pelo menos o número da carta.', 'erro'); return; }
-
-    status(elStatus, 'Procurando…');
-    try {
-      const r = await Api.identificarPorNumero(num, total, nome);
-      const cartas = r.cartas || [];
-      ultimaLista = cartas;
-      status(elStatus, cartas.length ? 'Achei ' + cartas.length + ' resultado(s).' : 'Nada encontrado.',
-        cartas.length ? 'bom' : 'erro');
-      desenharResultados($('resultado-scan'), cartas, 'Nada encontrado com esse número.');
-      if (cartas.length === 1) abrirDetalhe(cartas[0]);
-    } catch (e) {
-      status(elStatus, e.message || String(e), 'erro');
-    }
-  });
-
-  // --- buscar por nome -----------------------------------------------------
+  const elStatusBusca = $('status-busca');
+  const elResultado = $('resultado-busca');
 
   async function buscar() {
     const termo = $('in-busca').value.trim();
     if (!termo) return;
-    status($('status-busca'), 'Buscando…');
+
+    const numero = lerNumero(termo);
+    status(elStatusBusca, 'Procurando…');
+    elResultado.innerHTML = '';
+
     try {
-      const r = await Api.buscarPorNome(termo, 24);
+      const r = numero
+        ? await Api.identificarPorNumero(numero.num, numero.total)
+        : await Api.buscarPorNome(termo, 24);
+
       const cartas = r.cartas || [];
-      status($('status-busca'), cartas.length + ' resultado(s).', cartas.length ? 'bom' : '');
-      desenharResultados($('resultado-busca'), cartas, 'Nenhuma carta com esse nome.');
+
+      if (!cartas.length) {
+        status(elStatusBusca, numero
+          ? 'Nenhuma carta com o número ' + numero.num + '/' + numero.total + '.'
+          : 'Nenhuma carta com esse nome.', 'erro');
+        vazio(elResultado, '⌕', numero
+          ? 'Confira o número no rodapé da carta.\nO segundo número é o total da coleção.'
+          : 'Tente outro nome, ou busque pelo número do rodapé.');
+        return;
+      }
+
+      status(elStatusBusca, numero
+        ? (cartas.length === 1
+          ? 'Achei: ' + cartas[0].nome + ' — ' + cartas[0].set + '.'
+          : cartas.length + ' coleções têm uma carta ' + numero.num + '/' + numero.total + '. Escolha a certa:')
+        : cartas.length + ' resultado(s).', 'bom');
+
+      desenharResultados(elResultado, cartas, '');
+      if (numero && cartas.length === 1) abrirDetalhe(cartas[0]);
     } catch (e) {
-      status($('status-busca'), e.message || String(e), 'erro');
+      status(elStatusBusca, e.message || String(e), 'erro');
     }
   }
 
   $('btn-busca').addEventListener('click', buscar);
   $('in-busca').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') buscar();
+    if (e.key === 'Enter') { e.preventDefault(); $('in-busca').blur(); buscar(); }
   });
 
   // --- wishlist e coleção --------------------------------------------------
@@ -937,43 +606,19 @@
   function desenharLista(nome) {
     const el = $('lista-' + nome);
     const cartas = Store.lista(nome);
-    el.innerHTML = '';
 
     if (!cartas.length) {
-      const p = document.createElement('p');
-      p.className = 'vazio';
-      p.textContent = nome === 'wishlist'
-        ? 'Nada na wishlist ainda.\nEscaneie ou busque uma carta e toque em "Adicionar à Wishlist".'
-        : 'Sua coleção está vazia.\nEscaneie as cartas que você já tem para montar o inventário.';
-      p.style.whiteSpace = 'pre-line';
-      el.appendChild(p);
+      vazio(el, nome === 'wishlist' ? '★' : '▦', nome === 'wishlist'
+        ? 'Nada na wishlist ainda.\nBusque uma carta e toque em "Adicionar à Wishlist".'
+        : 'Sua coleção está vazia.\nBusque as cartas que você já tem para montar o inventário.');
       atualizarTotal(nome, cartas);
       return;
     }
 
+    el.innerHTML = '';
     cartas.forEach(function (c) {
-      const linha = document.createElement('div');
-      linha.style.position = 'relative';
-      linha.appendChild(elemCarta(c));
-
-      const x = document.createElement('button');
-      x.type = 'button';
-      x.className = 'btn pequeno perigo';
-      x.textContent = '✕';
-      x.title = 'Remover';
-      x.style.position = 'absolute';
-      x.style.top = '6px';
-      x.style.right = '6px';
-      x.addEventListener('click', function (ev) {
-        ev.stopPropagation();
-        Store.remover(nome, c);
-        desenharLista(nome);
-        avisar('Removido.');
-      });
-      linha.appendChild(x);
-      el.appendChild(linha);
+      el.appendChild(elemCarta(c, { removerDe: nome }));
     });
-
     atualizarTotal(nome, cartas);
   }
 
@@ -981,21 +626,24 @@
     const cfg = Store.config();
     let soma = 0;
     let contados = 0;
+
     cartas.forEach(function (c) {
       const meu = Store.precoManual(c);
       if (meu != null) { soma += meu; contados++; }
       else if (c.precoBRL != null) { soma += c.precoBRL; contados++; }
       else if (c.precoUSD != null) { soma += c.precoUSD * cfg.usdBrl; contados++; }
     });
+
     const el = $('total-' + nome);
-    el.textContent = cartas.length
-      ? cartas.length + ' carta(s) · ' + (brl(soma) || 'R$ 0,00') + (contados < cartas.length ? ' (parcial)' : '')
-      : '';
+    if (!cartas.length) { el.textContent = 'nenhuma carta ainda'; return; }
+    el.innerHTML = cartas.length + ' carta(s) · <b>' + (brl(soma) || 'R$ 0,00') + '</b>' +
+      (contados < cartas.length ? ' <span class="ajuda">(parcial)</span>' : '');
   }
 
   async function atualizarPrecos(nome) {
     const cartas = Store.lista(nome);
     if (!cartas.length) return;
+
     avisar('Atualizando ' + cartas.length + ' carta(s)…', 4000);
     cacheLiga.clear();
 
@@ -1008,6 +656,7 @@
         }
       } catch (e) { /* segue para a próxima */ }
     }
+
     desenharLista(nome);
     avisar('Preços atualizados.');
   }
@@ -1021,7 +670,6 @@
     const cfg = Store.config();
     $('in-usd').value = cfg.usdBrl;
     $('in-eur').value = cfg.eurBrl;
-    $('chk-nome').checked = !!cfg.lerNome;
     $('chk-liga').checked = !!cfg.consultarLiga;
     $('chk-pocket').checked = !!cfg.incluirPocket;
     desenharEstados();
@@ -1050,6 +698,7 @@
       campo.max = '300';
       campo.step = '1';
       campo.value = Math.round(cfg.estados[e.sigla] * 100);
+      campo.setAttribute('aria-label', 'Proporção para ' + e.nome);
       campo.addEventListener('change', function () {
         const v = Number(campo.value);
         if (!Number.isFinite(v) || v < 0) { campo.value = Math.round(cfg.estados[e.sigla] * 100); return; }
@@ -1076,6 +725,16 @@
     avisar('Proporções restauradas.');
   });
 
+  $('in-usd').addEventListener('change', function () {
+    Store.salvarConfig({ usdBrl: Number($('in-usd').value) || 5.4 });
+  });
+  $('in-eur').addEventListener('change', function () {
+    Store.salvarConfig({ eurBrl: Number($('in-eur').value) || 6.0 });
+  });
+  $('chk-liga').addEventListener('change', function () {
+    Store.salvarConfig({ consultarLiga: $('chk-liga').checked });
+  });
+
   $('chk-pocket').addEventListener('change', async function () {
     Store.salvarConfig({ incluirPocket: $('chk-pocket').checked });
     try {
@@ -1088,27 +747,13 @@
     }
   });
 
-  $('in-usd').addEventListener('change', function () {
-    Store.salvarConfig({ usdBrl: Number($('in-usd').value) || 5.4 });
-  });
-  $('in-eur').addEventListener('change', function () {
-    Store.salvarConfig({ eurBrl: Number($('in-eur').value) || 6.0 });
-  });
-  $('chk-nome').addEventListener('change', function () {
-    Store.salvarConfig({ lerNome: $('chk-nome').checked });
-  });
-  $('chk-liga').addEventListener('change', function () {
-    Store.salvarConfig({ consultarLiga: $('chk-liga').checked });
-  });
-
   $('btn-cotacao').addEventListener('click', async function () {
     status($('status-cotacao'), 'Consultando…');
     try {
       const c = await Api.cotacoes();
-      const nova = {};
+      const nova = { cotacaoEm: Date.now() };
       if (c.usdBrl) nova.usdBrl = Number(c.usdBrl.toFixed(2));
       if (c.eurBrl) nova.eurBrl = Number(c.eurBrl.toFixed(2));
-      nova.cotacaoEm = Date.now();
       Store.salvarConfig(nova);
       carregarAjustes();
       status($('status-cotacao'), 'Cotação de hoje aplicada.', 'bom');
@@ -1128,6 +773,7 @@
   });
 
   $('btn-importar').addEventListener('click', function () { $('in-arquivo').click(); });
+
   $('in-arquivo').addEventListener('change', function (e) {
     const f = e.target.files[0];
     if (!f) return;
@@ -1136,6 +782,8 @@
       try {
         Store.importar(JSON.parse(leitor.result));
         carregarAjustes();
+        desenharLista('wishlist');
+        desenharLista('colecao');
         avisar('Backup restaurado.');
       } catch (err) {
         avisar(err.message || 'Arquivo inválido.');
@@ -1145,7 +793,7 @@
   });
 
   $('btn-limpar').addEventListener('click', function () {
-    if (!confirm('Apagar wishlist, coleção e ajustes deste aparelho?')) return;
+    if (!confirm('Apagar wishlist, coleção, preços anotados e ajustes deste aparelho?')) return;
     Store.apagarTudo();
     carregarAjustes();
     desenharLista('wishlist');
@@ -1199,10 +847,8 @@
   desenharLista('wishlist');
   desenharLista('colecao');
 
-  if (!Scanner.contextoSeguro()) {
-    $('dica-https').textContent =
-      'Atenção: a câmera só funciona em HTTPS. Neste endereço o navegador vai bloquear.';
-  }
+  // Deixa a lista de coleções pronta antes da primeira busca.
+  Api.carregarSets().catch(function () { /* a busca tenta de novo */ });
 
   // Cotação envelhecida: atualiza sozinho uma vez por dia.
   (function () {

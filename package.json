@@ -2,7 +2,7 @@
   "name": "compfindr",
   "version": "0.1.0",
   "private": true,
-  "description": "Scanner de cartas Pokémon pela câmera + consulta de preços (LigaPokémon, TCGPlayer, Cardmarket) + wishlist. PWA instalável.",
+  "description": "Busca de cartas Pokémon pelo número do rodapé + preços (LigaPokémon, TCGPlayer, Cardmarket) + wishlist e coleção. PWA instalável.",
   "author": "Yuzo",
   "type": "module",
   "scripts": {

@@ -1,7 +1,7 @@
 {
-  "name": "CompFindr — scanner de cartas Pokémon",
+  "name": "CompFindr — preços de cartas Pokémon",
   "short_name": "CompFindr",
-  "description": "Escaneie cartas Pokémon com a câmera e veja o preço na LigaPokémon, TCGPlayer e Cardmarket.",
+  "description": "Encontre uma carta Pokémon pelo número do rodapé e veja o preço na LigaPokémon, TCGPlayer e Cardmarket. Com wishlist e coleção.",
   "lang": "pt-BR",
   "start_url": "/",
   "scope": "/",
@@ -16,7 +16,7 @@
     { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    { "name": "Escanear carta", "url": "/?aba=escanear" },
+    { "name": "Buscar carta", "url": "/?aba=buscar" },
     { "name": "Wishlist", "url": "/?aba=wishlist" }
   ]
 }
