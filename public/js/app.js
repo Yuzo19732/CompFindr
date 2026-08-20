@@ -367,10 +367,15 @@
         'médio ' + (brl(l.precoMed) || '—') + '  ·  maior ' + (brl(l.precoMax) || '—'),
         true
       ));
-    } else if (r.indisponivel) {
+    } else if (r.indisponivel || r.erro) {
       const p = document.createElement('p');
       p.className = 'ajuda';
-      p.textContent = 'O preço da LigaPokémon precisa do servidor do site. Publique no Netlify ou rode com "netlify dev".';
+      // Dois problemas diferentes, que confundem se forem descritos igual:
+      // não existe servidor, ou existe mas a Liga recusou o pedido dele.
+      p.textContent = /403|502|respondeu/.test(String(r.erro || ''))
+        ? 'A LigaPokémon está recusando o pedido do servidor do site (ela usa Cloudflare, ' +
+          'que barra endereços de nuvem). Use o link abaixo para ver o preço em reais direto no site deles.'
+        : 'O preço da LigaPokémon precisa do servidor do site. Publique no Netlify ou rode com "npm start".';
       precos.appendChild(p);
     } else {
       const p = document.createElement('p');

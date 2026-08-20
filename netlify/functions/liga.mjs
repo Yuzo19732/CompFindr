@@ -188,10 +188,57 @@ function parseLista(html) {
 
 // --- handler ----------------------------------------------------------------
 
+// Diagnostico: ?debug=1 conta exatamente o que a LigaPokemon respondeu para
+// ESTE servidor. Existe porque o resultado muda conforme de onde sai o pedido
+// — a Liga fica atras do Cloudflare, que barra parte das faixas de IP de
+// nuvem. Rodando no PC funciona; rodando no Netlify pode voltar 403.
+async function diagnostico(alvo) {
+  const inicio = Date.now();
+  try {
+    const resp = await fetch(alvo, {
+      headers: {
+        'User-Agent': UA,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+      },
+      signal: AbortSignal.timeout(20000),
+    });
+    const corpo = await resp.text();
+    const cab = {};
+    ['server', 'cf-ray', 'cf-mitigated', 'content-type', 'retry-after'].forEach(function (k) {
+      const v = resp.headers.get(k);
+      if (v) cab[k] = v;
+    });
+    return {
+      passou: resp.ok,
+      status: resp.status,
+      ms: Date.now() - inicio,
+      cabecalhos: cab,
+      // O CF-RAY termina com o codigo do ponto de presenca (GRU = Sao Paulo).
+      inicioDoCorpo: corpo.slice(0, 220).replace(/\s+/g, ' '),
+      tamanho: corpo.length,
+    };
+  } catch (e) {
+    return { passou: false, erro: String(e && e.message ? e.message : e), ms: Date.now() - inicio };
+  }
+}
+
 export default async (req) => {
   if (req.method === 'OPTIONS') return new Response('', { status: 204, headers: CORS });
 
   const url = new URL(req.url);
+
+  if (url.searchParams.get('debug')) {
+    const nomeDbg = (url.searchParams.get('nome') || 'Pikachu').trim();
+    const alvo = BASE + '?view=cards/search&card=' + encodeURIComponent(nomeDbg);
+    const d = await diagnostico(alvo);
+    return new Response(JSON.stringify({ alvo: alvo, resultado: d }, null, 1),
+      { status: 200, headers: CORS });
+  }
+
   const nome = (url.searchParams.get('nome') || '').trim();
   const num = (url.searchParams.get('num') || '').trim();
   const total = (url.searchParams.get('total') || '').trim();

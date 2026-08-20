@@ -18,6 +18,24 @@
 
 import handler from '../functions/liga.mjs';
 
-export default async (request) => handler(request);
+export default async (request, context) => {
+  const resposta = await handler(request);
+
+  // No modo diagnóstico, acrescenta de ONDE a borda rodou. É esse dado que
+  // diz se o pedido saiu mesmo do Brasil.
+  if (new URL(request.url).searchParams.get('debug')) {
+    const dados = await resposta.json();
+    dados.borda = {
+      pais: context.geo && context.geo.country ? context.geo.country.code : '?',
+      cidade: context.geo ? context.geo.city : '?',
+    };
+    return new Response(JSON.stringify(dados, null, 1), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' },
+    });
+  }
+
+  return resposta;
+};
 
 export const config = { path: '/api/liga' };
