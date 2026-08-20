@@ -1,141 +1,286 @@
 /* ==========================================================================
    api.js — conversa com as fontes de dados
    --------------------------------------------------------------------------
-   Duas funções rodam no servidor do Netlify:
-     /.netlify/functions/ptcg  -> identifica a carta (pokemontcg.io / tcgdex)
-     /.netlify/functions/liga  -> preço em reais na LigaPokémon
+   A fonte principal é a tcgdex.net, chamada DIRETO do navegador.
 
-   Se o site estiver sendo aberto como arquivo estático (sem `netlify dev`),
-   as funções não existem. Nesse caso a identificação cai direto na
-   pokemontcg.io, que aceita chamadas do navegador; a LigaPokémon não tem
-   como funcionar sem servidor e o app avisa isso na tela.
+   Antes o app passava pela pokemontcg.io. Medido em 2026-08-20: ela responde
+   erro 502 em cerca de 3 de cada 5 chamadas. Como havia retentativa com
+   espera crescente, cada consulta gastava segundos antes de desistir — era
+   essa a causa da lentidão. A tcgdex respondeu 100% das vezes em ~0,7s,
+   aceita chamada direta (tem CORS liberado) e traz preço de TCGPlayer e
+   Cardmarket atualizado diariamente. Ou seja: mais rápida, mais confiável e
+   sem precisar passar pelo servidor.
+
+   A lista de coleções é baixada uma vez e guardada por uma semana. Com ela
+   na mão, identificar "125/197" não custa busca nenhuma: o total (197) diz
+   quais coleções têm esse tamanho, e aí basta pedir a carta 125 de cada uma.
+
+   O preço em reais continua vindo da LigaPokémon, que precisa do servidor
+   (o navegador bloquearia por CORS).
    ========================================================================== */
 
 const Api = (function () {
 
+  const TCG = 'https://api.tcgdex.net/v2/en';
   const FUNCS = '/.netlify/functions';
-  let temFuncoes = null; // null = ainda não sabemos
+  const CHAVE_SETS = 'cc.sets.v2';
+  const VALIDADE_SETS = 7 * 24 * 60 * 60 * 1000;
 
-  function limparNumero(v) {
+  let mapaSets = null;    // id da coleção -> dados dela
+  let porTotal = null;    // quantidade de cards -> ids de coleções desse tamanho
+  let carregandoSets = null;
+  let temFuncoes = null;  // null = ainda não sabemos se o servidor existe
+
+  // --- utilidades ----------------------------------------------------------
+
+  function semZeros(v) {
     const s = String(v == null ? '' : v).trim();
-    if (!/^\d+$/.test(s)) return s;
-    return String(parseInt(s, 10)); // "025" -> "25"
+    return /^\d+$/.test(s) ? String(parseInt(s, 10)) : s;
   }
 
-  async function pegarJson(url) {
-    const resp = await fetch(url, { headers: { Accept: 'application/json' } });
+  async function pegarJson(url, ms) {
+    const resp = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(ms || 15000),
+    });
     const texto = await resp.text();
     let json;
     try {
       json = JSON.parse(texto);
     } catch (e) {
-      throw new Error('Resposta inesperada do servidor (' + resp.status + ').');
+      throw new Error('Resposta inesperada (' + resp.status + ').');
     }
     if (!resp.ok && json && json.erro) throw new Error(json.erro);
+    if (!resp.ok) throw new Error('Servidor respondeu ' + resp.status + '.');
     return json;
   }
 
-  // --- plano B: falar direto com a pokemontcg.io ---------------------------
+  // --- coleções ------------------------------------------------------------
 
-  function simplificarDireto(card) {
-    const set = card.set || {};
-    const p = card.tcgplayer && card.tcgplayer.prices ? card.tcgplayer.prices : null;
-    let usd = null;
-    let variante = '';
-    if (p) {
-      const chaves = Object.keys(p);
-      for (let i = 0; i < chaves.length; i++) {
-        const v = p[chaves[i]];
-        const m = v.market != null ? v.market : v.mid;
-        if (m != null) { usd = m; variante = chaves[i]; break; }
-      }
+  function indexarSets(lista) {
+    mapaSets = {};
+    porTotal = {};
+    lista.forEach(function (s, i) {
+      const c = s.cardCount || {};
+      mapaSets[s.id] = {
+        id: s.id,
+        nome: s.name || s.id,
+        oficial: c.official || 0,
+        total: c.total || 0,
+        simbolo: s.symbol ? s.symbol + '.png' : '',
+        ordem: i, // a lista vem da mais antiga para a mais nova
+      };
+      [c.official, c.total].forEach(function (n) {
+        if (!n) return;
+        if (!porTotal[n]) porTotal[n] = [];
+        if (porTotal[n].indexOf(s.id) === -1) porTotal[n].push(s.id);
+      });
+    });
+  }
+
+  async function carregarSets() {
+    if (mapaSets) return mapaSets;
+    if (carregandoSets) return carregandoSets;
+
+    carregandoSets = (async function () {
+      try {
+        const guardado = JSON.parse(localStorage.getItem(CHAVE_SETS) || 'null');
+        if (guardado && Date.now() - guardado.em < VALIDADE_SETS && guardado.lista.length) {
+          indexarSets(guardado.lista);
+          return mapaSets;
+        }
+      } catch (e) { /* cache ruim, baixa de novo */ }
+
+      const lista = await pegarJson(TCG + '/sets', 20000);
+      indexarSets(lista);
+      try {
+        localStorage.setItem(CHAVE_SETS, JSON.stringify({ em: Date.now(), lista: lista }));
+      } catch (e) { /* sem espaço, segue só em memória */ }
+      return mapaSets;
+    })();
+
+    try {
+      return await carregandoSets;
+    } finally {
+      carregandoSets = null;
     }
-    const cm = card.cardmarket && card.cardmarket.prices ? card.cardmarket.prices : null;
+  }
+
+  // --- conversão das cartas ------------------------------------------------
+
+  // Escolhe o preço mais representativo entre as versões do TCGPlayer.
+  function precoTCG(tcgplayer) {
+    if (!tcgplayer) return null;
+    const ordem = ['holofoil', 'normal', 'reverseHolofoil', 'firstEditionHolofoil', 'firstEditionNormal'];
+    const chaves = ordem.filter(function (k) { return tcgplayer[k]; })
+      .concat(Object.keys(tcgplayer).filter(function (k) {
+        return ordem.indexOf(k) === -1 && tcgplayer[k] && typeof tcgplayer[k] === 'object';
+      }));
+    for (let i = 0; i < chaves.length; i++) {
+      const v = tcgplayer[chaves[i]];
+      const p = v.marketPrice != null ? v.marketPrice : v.midPrice;
+      if (p != null) return { variante: chaves[i], valor: p, baixo: v.lowPrice != null ? v.lowPrice : null };
+    }
+    return null;
+  }
+
+  function simplificar(c) {
+    const set = c.set || {};
+    const contagem = set.cardCount || {};
+    const preco = c.pricing || {};
+    const tcg = precoTCG(preco.tcgplayer);
+    const cm = preco.cardmarket;
+
     return {
-      id: card.id,
-      nome: card.name,
-      num: card.number,
-      total: set.printedTotal != null ? String(set.printedTotal) : '',
+      id: c.id,
+      nome: c.name || '',
+      num: String(c.localId == null ? '' : c.localId),
+      total: contagem.official != null ? String(contagem.official) : '',
+      totalReal: contagem.total != null ? String(contagem.total) : '',
       set: set.name || '',
       setId: set.id || '',
-      serie: set.series || '',
-      lancamento: set.releaseDate || '',
-      imagem: card.images ? card.images.small : '',
-      imagemGrande: card.images ? card.images.large : '',
-      raridade: card.rarity || '',
-      artista: card.artist || '',
-      precoUSD: usd,
-      variante: variante,
-      precoEUR: cm ? (cm.trendPrice != null ? cm.trendPrice : cm.averageSellPrice) : null,
-      linkTCG: card.tcgplayer ? card.tcgplayer.url : '',
+      lancamento: '',
+      imagem: c.image ? c.image + '/low.webp' : '',
+      imagemGrande: c.image ? c.image + '/high.webp' : '',
+      raridade: c.rarity || '',
+      artista: c.illustrator || '',
+      supertipo: c.category || '',
+      precoUSD: tcg ? tcg.valor : null,
+      precoUSDbaixo: tcg ? tcg.baixo : null,
+      variante: tcg ? tcg.variante : '',
+      precoEUR: cm ? (cm.trend != null ? cm.trend : cm.avg) : null,
+      completa: true,
     };
   }
 
-  async function direto(consulta, limite) {
-    const url = 'https://api.pokemontcg.io/v2/cards?q=' + encodeURIComponent(consulta) +
-      '&pageSize=' + (limite || 24) + '&orderBy=-set.releaseDate';
-    const json = await pegarJson(url);
-    return { fonte: 'pokemontcg.io (direto)', cartas: (json.data || []).map(simplificarDireto) };
+  // A busca por nome devolve uma versão enxuta (sem coleção nem preço). O
+  // nome da coleção sai do id ("sv03-125" -> "sv03"), sem gastar requisição.
+  function simplificarBreve(b) {
+    const corte = String(b.id || '').lastIndexOf('-');
+    const setId = corte > 0 ? b.id.slice(0, corte) : '';
+    const s = (mapaSets && mapaSets[setId]) || null;
+    return {
+      id: b.id,
+      nome: b.name || '',
+      num: String(b.localId == null ? '' : b.localId),
+      total: s ? String(s.oficial) : '',
+      set: s ? s.nome : '',
+      setId: setId,
+      ordem: s ? s.ordem : -1,
+      imagem: b.image ? b.image + '/low.webp' : '',
+      imagemGrande: b.image ? b.image + '/high.webp' : '',
+      raridade: '',
+      artista: '',
+      precoUSD: null,
+      precoEUR: null,
+      completa: false,
+    };
   }
 
-  // --- identificação -------------------------------------------------------
+  // --- identificação por número -------------------------------------------
 
-  async function chamarPtcg(params) {
-    const qs = new URLSearchParams(params).toString();
-
-    if (temFuncoes !== false) {
-      try {
-        const json = await pegarJson(FUNCS + '/ptcg?' + qs);
-        temFuncoes = true;
-        return json;
-      } catch (e) {
-        if (temFuncoes === true) throw e; // as funções existem, o erro é real
-        temFuncoes = false;               // rodando sem servidor: cai no plano B
-      }
+  async function pegarCarta(setId, num) {
+    try {
+      const c = await pegarJson(TCG + '/cards/' + encodeURIComponent(setId + '-' + num), 12000);
+      return c && c.id ? simplificar(c) : null;
+    } catch (e) {
+      return null; // essa coleção não tem carta com esse número
     }
-
-    const num = limparNumero(params.num || '');
-    const total = limparNumero(params.total || '');
-    const nome = params.nome || '';
-    if (params.id) {
-      const j = await pegarJson('https://api.pokemontcg.io/v2/cards/' + encodeURIComponent(params.id));
-      return { fonte: 'pokemontcg.io (direto)', cartas: j.data ? [simplificarDireto(j.data)] : [] };
-    }
-    if (num && total) {
-      const r = await direto('number:"' + num + '" set.printedTotal:' + total, params.limite);
-      if (r.cartas.length) return r;
-    }
-    if (nome) return direto('name:"' + nome + '*"', params.limite);
-    if (num) return direto('number:"' + num + '"', params.limite);
-    return { fonte: '', cartas: [] };
   }
 
-  // Identifica pelo número lido no rodapé da carta.
-  function identificarPorNumero(num, total, nome) {
-    const p = { num: num, total: total };
-    if (nome) p.nome = nome;
-    return chamarPtcg(p);
+  // "125/197": o 197 diz quais coleções têm esse tamanho, o 125 diz a carta.
+  // Nenhuma busca envolvida — só as consultas diretas, em paralelo.
+  async function identificarPorNumero(num, total, nome) {
+    const n = semZeros(num);
+    const t = semZeros(total);
+
+    if (!t) {
+      if (nome) return buscarPorNome(nome, 24);
+      throw new Error('Informe o total da coleção (o número depois da barra).');
+    }
+
+    await carregarSets();
+    const ids = (porTotal && porTotal[Number(t)]) || [];
+    if (!ids.length) return { fonte: 'tcgdex.net', cartas: [] };
+
+    const tentativas = [];
+    ids.slice(0, 12).forEach(function (id) {
+      tentativas.push(pegarCarta(id, n));
+      // Algumas coleções guardam o número com zero à esquerda.
+      if (n.length < 3) tentativas.push(pegarCarta(id, n.padStart(3, '0')));
+    });
+
+    const achadas = (await Promise.all(tentativas)).filter(Boolean);
+
+    // Tira repetidas e põe a coleção mais recente primeiro.
+    const vistos = {};
+    const cartas = achadas.filter(function (c) {
+      if (vistos[c.id]) return false;
+      vistos[c.id] = true;
+      return true;
+    }).sort(function (a, b) {
+      const oa = mapaSets[a.setId] ? mapaSets[a.setId].ordem : 0;
+      const ob = mapaSets[b.setId] ? mapaSets[b.setId].ordem : 0;
+      return ob - oa;
+    });
+
+    return { fonte: 'tcgdex.net', cartas: cartas };
   }
 
-  function buscarPorNome(nome, limite) {
-    return chamarPtcg({ nome: nome, limite: limite || 24 });
+  // --- busca por nome ------------------------------------------------------
+
+  async function buscarPorNome(nome, limite) {
+    const termo = String(nome || '').trim();
+    if (!termo) return { fonte: '', cartas: [] };
+
+    await carregarSets();
+    const lista = await pegarJson(TCG + '/cards?name=like:' + encodeURIComponent(termo), 20000);
+    if (!Array.isArray(lista)) return { fonte: 'tcgdex.net', cartas: [] };
+
+    const cartas = lista.map(simplificarBreve)
+      .sort(function (a, b) { return b.ordem - a.ordem; })
+      .slice(0, limite || 24);
+
+    return { fonte: 'tcgdex.net', cartas: cartas, totalEncontrado: lista.length };
+  }
+
+  // Completa uma carta que veio enxuta da busca (preço, raridade, artista).
+  async function detalhar(id) {
+    const c = await pegarJson(TCG + '/cards/' + encodeURIComponent(id), 12000);
+    return c && c.id ? simplificar(c) : null;
   }
 
   function porId(id) {
-    return chamarPtcg({ id: id });
+    return detalhar(id).then(function (c) {
+      return { fonte: 'tcgdex.net', cartas: c ? [c] : [] };
+    });
   }
 
-  // --- LigaPokémon ---------------------------------------------------------
+  // --- totais de coleção que existem de verdade ---------------------------
+  //
+  // O scanner usa isto para descartar leitura impossível: se nenhuma coleção
+  // tem 378 cards, "677/378" não é carta.
+
+  async function totaisConhecidos() {
+    try {
+      await carregarSets();
+      return new Set(Object.keys(porTotal).map(Number));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // --- LigaPokémon (precisa do servidor) ----------------------------------
 
   async function liga(nome, num, total) {
-    if (temFuncoes === false) {
-      return { resultados: [], indisponivel: true };
-    }
+    if (temFuncoes === false) return { resultados: [], indisponivel: true };
+
     const p = new URLSearchParams({ nome: nome });
     if (num) p.set('num', String(num));
     if (total) p.set('total', String(total));
+
     try {
-      const json = await pegarJson(FUNCS + '/liga?' + p.toString());
+      const json = await pegarJson(FUNCS + '/liga?' + p.toString(), 25000);
       temFuncoes = true;
       return json;
     } catch (e) {
@@ -144,43 +289,10 @@ const Api = (function () {
     }
   }
 
-  // --- totais de coleção conhecidos ---------------------------------------
-  //
-  // Serve para o scanner descartar leitura impossível: se o OCR entendeu
-  // "677/378" e nenhuma coleção do jogo tem 378 cards, aquilo não é carta.
-
-  let totaisCache = null;
-
-  async function totaisConhecidos() {
-    if (totaisCache) return totaisCache;
-
-    try {
-      const guardado = JSON.parse(localStorage.getItem('cc.totais') || 'null');
-      if (guardado && Date.now() - guardado.em < 7 * 24 * 60 * 60 * 1000 && guardado.totais.length) {
-        totaisCache = new Set(guardado.totais);
-        return totaisCache;
-      }
-    } catch (e) { /* cache inválido, busca de novo */ }
-
-    if (temFuncoes === false) return null;
-
-    try {
-      const j = await pegarJson(FUNCS + '/ptcg?totais=1');
-      if (!j.totais || !j.totais.length) return null;
-      totaisCache = new Set(j.totais);
-      try {
-        localStorage.setItem('cc.totais', JSON.stringify({ em: Date.now(), totais: j.totais }));
-      } catch (e) { /* sem espaço, tudo bem */ }
-      return totaisCache;
-    } catch (e) {
-      return null;
-    }
-  }
-
   // --- cotação -------------------------------------------------------------
 
   async function cotacoes() {
-    const j = await pegarJson('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL');
+    const j = await pegarJson('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL', 12000);
     const usd = j.USDBRL ? Number(j.USDBRL.bid) : null;
     const eur = j.EURBRL ? Number(j.EURBRL.bid) : null;
     return {
@@ -189,12 +301,53 @@ const Api = (function () {
     };
   }
 
+  // --- reserva -------------------------------------------------------------
+  //
+  // A tcgdex é o único ponto de falha do app agora. Se ela cair, a função
+  // /ptcg no servidor tenta a pokemontcg.io. É lenta e instável, mas é melhor
+  // que o app parar de funcionar.
+
+  async function pelaReserva(params) {
+    if (temFuncoes === false) return { fonte: '', cartas: [] };
+    const qs = new URLSearchParams(params).toString();
+    const j = await pegarJson(FUNCS + '/ptcg?' + qs, 30000);
+    temFuncoes = true;
+    return {
+      fonte: (j.fonte || 'reserva') + ' (reserva)',
+      cartas: (j.cartas || []).map(function (c) {
+        return Object.assign({}, c, { completa: true });
+      }),
+    };
+  }
+
+  async function comReserva(principal, params) {
+    try {
+      const r = await principal();
+      if (r.cartas && r.cartas.length) return r;
+      return r;
+    } catch (e) {
+      try {
+        return await pelaReserva(params);
+      } catch (e2) {
+        throw e; // o erro que importa é o da fonte principal
+      }
+    }
+  }
+
   return {
-    identificarPorNumero: identificarPorNumero,
-    buscarPorNome: buscarPorNome,
+    carregarSets: carregarSets,
+    identificarPorNumero: function (num, total, nome) {
+      return comReserva(function () { return identificarPorNumero(num, total, nome); },
+        { num: num, total: total });
+    },
+    buscarPorNome: function (nome, limite) {
+      return comReserva(function () { return buscarPorNome(nome, limite); },
+        { nome: nome, limite: limite || 24 });
+    },
+    detalhar: detalhar,
     porId: porId,
-    liga: liga,
     totaisConhecidos: totaisConhecidos,
+    liga: liga,
     cotacoes: cotacoes,
     semServidor: function () { return temFuncoes === false; },
   };

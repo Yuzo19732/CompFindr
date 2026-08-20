@@ -57,22 +57,53 @@ Depois disso o app abre em tela cheia, com ícone próprio, e a casca funciona o
 ## Como o scanner funciona
 
 Não existe API gratuita e confiável de "buscar carta por imagem". O caminho que
-funciona é ler o texto impresso:
+funciona é ler o texto impresso.
 
-1. A câmera congela um quadro e recorta **a faixa de baixo da carta**, onde fica o
-   número do coletor (`125/197`).
-2. O Tesseract lê essa faixa quatro vezes, com pontos de corte diferentes entre preto
-   e branco. Cartas full-art precisam de ajuste diferente das comuns.
-3. O `/` sai errado com frequência — `161/131` vira `1617131`. Por isso o app não
-   confia numa leitura só: ele monta uma **lista de candidatos** e pergunta à base de
-   cartas qual deles existe de verdade. Quem decide é o banco de dados, não o OCR.
-4. Antes de consultar, joga fora o impossível: se nenhuma coleção do jogo tem 378
-   cards, `677/378` não é carta.
-5. Se o número der empate (duas coleções com o mesmo total), aí sim ele lê o **nome**
-   no topo e escolhe por semelhança de texto.
+### O problema da resolução
 
-Testado com carta comum, holo e full-art. A full-art é a mais difícil e é a que exige
-a lista de candidatos.
+O número do rodapé tem cerca de **1,7% da altura da carta**. Se a carta ocupa 1000px
+na imagem, o número tem 17 pixels de altura — e aí o OCR erra quase sempre. Medido:
+com a carta a 2000px de altura ele acerta mesmo desfocado; a 700px, erra tudo.
+
+É por isso que existem três formas de escanear, da mais confiável para a menos:
+
+| Modo | Como usar | Confiabilidade |
+| --- | --- | --- |
+| **Só o número** (padrão) | Encher a tarja branca só com o `125/197` | Melhor — o número ocupa a imagem toda |
+| **Usar uma foto** | Foto pelo app de câmera do celular | Boa — foto tem muito mais resolução que vídeo |
+| **Carta inteira** | Encaixar a carta na moldura | Só com câmera boa |
+
+A câmera é aberta pedindo a maior resolução que o aparelho aceitar (não 1080p), com
+foco contínuo. Se o aparelho tiver zoom óptico, aparece um controle de zoom — ele
+ajuda a ficar longe o bastante para o foco pegar e ainda encher a tarja.
+
+### O funil de identificação
+
+1. O Tesseract lê a faixa em até quatro passadas, com pontos de corte diferentes entre
+   preto e branco (carta comum e full-art pedem cortes diferentes). Modo de página 6,
+   não 7 — o rodapé tem duas linhas.
+2. O `/` sai errado com frequência: `161/131` vira `1617131`. Então o app não confia
+   numa leitura só — monta uma **lista de candidatos** (`161/131`, `16/1713`, …).
+3. Descarta o impossível: se nenhuma coleção do jogo tem 378 cards, `677/378` não é
+   carta.
+4. Consulta todos os candidatos restantes **em paralelo** (cada um custa ~200ms).
+5. **Confere pelo nome.** Este passo é o que evita o pior tipo de erro. Se o OCR perde
+   um dígito e lê `25/197` em vez de `125/197`, as duas cartas existem — sem
+   conferência o app entregaria Scovillain no lugar de Charizard ex. O nome do topo é
+   lido e usado de duas formas: descarta o que não bate e, melhor, **procura a carta
+   certa** (a busca da base é por substring, então o "harizard" sujo do OCR já acha
+   Charizard).
+6. Entre cartas de nome igual — artes alternativas, como os quatro Charizard ex da
+   mesma coleção — o número lido desempata: se o OCR leu "25", o 125 é mais provável
+   que o 228, porque "25" termina o 125.
+
+Se ainda assim falhar, **"Ver o que a câmera leu"** mostra o recorte exato que o OCR
+recebeu, o texto cru e os candidatos testados. É por aí que se descobre o motivo:
+recorte pequeno, borrado ou fora do número.
+
+Testado com foto de carta comum, holo e full-art: as quatro cartas de teste
+identificam certo. Foto de celular na mão, com reflexo e ângulo, é mais difícil — o
+diagnóstico existe justamente para isso.
 
 ---
 
@@ -80,15 +111,22 @@ a lista de candidatos.
 
 | Dado | Fonte | Como |
 | --- | --- | --- |
-| Qual carta é, imagem, coleção | `pokemontcg.io` | API pública, sem chave |
-| Reserva quando a de cima cai | `tcgdex.net` | API pública (sem preço) |
-| Preço em reais | **LigaPokémon** | leitura da página de busca deles |
-| Preço USD / EUR | TCGPlayer / Cardmarket | vem junto da `pokemontcg.io` |
+| Qual carta é, imagem, coleção | **`tcgdex.net`** | API pública, chamada direto do navegador |
+| Preço USD / EUR | TCGPlayer / Cardmarket | vem junto da `tcgdex.net`, atualizado todo dia |
+| Preço em reais | **LigaPokémon** | leitura da página deles, pelo servidor |
+| Reserva se a tcgdex cair | `pokemontcg.io` | função `/ptcg` no servidor |
 | Cotação do dia | `economia.awesomeapi.com.br` | atualiza sozinho 1× por dia |
 
-A `pokemontcg.io` cai com alguma frequência (erro 500/502). Por isso a função do
-servidor tenta quatro vezes antes de desistir e, se ainda assim falhar, usa a
-`tcgdex.net` para pelo menos identificar a carta.
+**Por que a tcgdex é a principal.** Medido em 2026-08-20: a `pokemontcg.io` responde
+erro 502 em cerca de **3 de cada 5 chamadas**. Como havia retentativa com espera
+crescente, cada consulta gastava segundos antes de desistir — era essa a causa da
+lentidão. A `tcgdex.net` respondeu 100% das vezes em ~0,7s, aceita chamada direta
+(tem CORS liberado, então nem passa pelo servidor) e traz os preços de TCGPlayer e
+Cardmarket. Resultado: identificar uma carta caiu de vários segundos para **~200ms**.
+
+A lista de coleções é baixada uma vez e guardada por uma semana. Com ela na mão,
+identificar "125/197" não custa busca nenhuma: o total (197) diz quais coleções têm
+esse tamanho, e aí basta pedir a carta 125 de cada uma.
 
 **Sobre a LigaPokémon:** eles não têm API pública, então a função lê o HTML da página
 de busca. Isso quebra se eles mudarem o layout do site — toda a parte frágil está
@@ -121,6 +159,26 @@ tools/
 ```
 
 Os dados ficam só no navegador do aparelho. Use **Ajustes → Exportar** para não perder.
+
+---
+
+## Quando não conseguir ler a carta
+
+Abra **"Ver o que a câmera leu"** logo abaixo do botão. O recorte mostrado é
+exatamente o que o OCR recebeu.
+
+- **O número aparece pequeno no recorte** — chegue mais perto, use o zoom, ou troque
+  para "Só o número".
+- **O recorte está borrado** — a maioria dos celulares não consegue focar a menos de
+  ~10cm. Afaste um pouco e use o zoom, ou tire uma foto pelo app de câmera e use
+  "Usar uma foto".
+- **O recorte não mostra o número** — a moldura está no lugar errado; ajuste o
+  enquadramento.
+- **Reflexo na carta (holo/full-art)** — incline a carta até o brilho sair de cima do
+  número, ou ligue a lanterna.
+
+Em qualquer caso, **digitar o número na mão** funciona e é rápido: o campo fica na
+mesma tela, em "Digitar o número na mão".
 
 ---
 

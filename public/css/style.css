@@ -146,6 +146,50 @@ main { padding: 14px 14px 24px; max-width: 780px; margin: 0 auto; }
 }
 .barra-camera .grande { flex: 1; }
 
+/* ---------- modos do scanner ---------- */
+
+.modos {
+  display: flex; gap: 6px; margin-top: 12px;
+  background: var(--fundo-2);
+  border: 1px solid var(--borda);
+  border-radius: 999px;
+  padding: 4px;
+}
+.modo {
+  flex: 1;
+  background: none; border: none;
+  color: var(--texto-fraco);
+  font-family: inherit; font-size: .84rem; font-weight: 600;
+  padding: 9px 8px; border-radius: 999px;
+  cursor: pointer;
+}
+.modo.ativo { background: var(--fundo-3); color: var(--texto); }
+
+.dica-modo { margin-top: 8px; }
+
+.linha-zoom {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 12px; font-size: .82rem; color: var(--texto-fraco);
+}
+.linha-zoom input { flex: 1; accent-color: var(--destaque); }
+
+/* ---------- diagnóstico ---------- */
+
+.diagnostico {
+  margin-top: 12px;
+  background: var(--fundo-2);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  padding: 12px 14px;
+}
+.diagnostico summary { cursor: pointer; font-size: .84rem; font-weight: 600; color: var(--texto-fraco); }
+.diagnostico img {
+  display: block; width: 100%; margin: 10px 0;
+  border-radius: 8px; background: #fff;
+  border: 1px solid var(--borda);
+}
+.diagnostico .ajuda { word-break: break-word; }
+
 /* ---------- botões ---------- */
 
 .btn {

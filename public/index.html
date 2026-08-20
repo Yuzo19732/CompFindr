@@ -43,20 +43,41 @@
 
       <div class="camera-vazia" id="camera-vazia">
         <p class="ico">📷</p>
-        <p>Encoste a carta na moldura e deixe o <strong>número do rodapé</strong> (ex.: 125/197) bem visível.</p>
+        <p>Aponte a câmera para o <strong>número do rodapé</strong> da carta (ex.: 125/197) e encha a tarja com ele.</p>
         <button id="btn-camera" class="btn primario" type="button">Ligar câmera</button>
+        <button id="btn-foto" class="btn" type="button">Usar uma foto</button>
         <p class="dica" id="dica-https"></p>
       </div>
     </div>
 
+    <div class="modos" id="modos" hidden>
+      <button class="modo ativo" data-modo="numero" type="button">Só o número</button>
+      <button class="modo" data-modo="carta" type="button">Carta inteira</button>
+    </div>
+    <p class="ajuda dica-modo" id="dica-modo" hidden></p>
+
+    <div class="linha-zoom" id="linha-zoom" hidden>
+      <span>Zoom</span>
+      <input id="in-zoom" type="range" min="1" max="4" step="0.1" value="1">
+    </div>
+
     <div class="barra-camera" id="barra-camera" hidden>
-      <button id="btn-capturar" class="btn primario grande" type="button">Escanear carta</button>
+      <button id="btn-capturar" class="btn primario grande" type="button">Ler</button>
       <button id="btn-lanterna" class="btn icone" type="button" title="Lanterna" hidden>🔦</button>
       <button id="btn-parar" class="btn icone" type="button" title="Desligar câmera">✕</button>
     </div>
 
+    <input id="in-foto" type="file" accept="image/*" capture="environment" hidden>
+
     <p class="status" id="status-scan"></p>
     <div class="barra-progresso oculto" id="barra-progresso"><div id="progresso"></div></div>
+
+    <details class="diagnostico oculto" id="diagnostico">
+      <summary>Ver o que a câmera leu</summary>
+      <p class="ajuda" id="diag-resumo"></p>
+      <img id="diag-imagem" alt="recorte analisado">
+      <p class="ajuda" id="diag-texto"></p>
+    </details>
 
     <details class="manual">
       <summary>Digitar o número na mão</summary>

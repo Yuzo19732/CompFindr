@@ -2,22 +2,25 @@
    ocr.js — leitura do texto da carta
    --------------------------------------------------------------------------
    Não existe API gratuita e confiável de "buscar carta por imagem". O que
-   funciona bem é ler o texto impresso com OCR (Tesseract, rodando dentro do
-   próprio navegador) e usar isso como chave de busca.
+   funciona é ler o texto impresso com OCR (Tesseract, rodando no próprio
+   navegador) e usar isso como chave de busca.
 
    O alvo é o número do rodapé — "125/197". Ele identifica a carta quase
    sozinho: o total (197) diz qual é a coleção, o número (125) diz qual carta
    dentro dela.
 
-   Duas decisões vieram de teste com cartas reais:
+   Três decisões vieram de teste com cartas reais:
 
-   1. O OCR erra o traço "/" com frequência em cartas full-art, lendo "7"
-      ou "1". Por isso não confiamos numa leitura única: geramos uma lista de
-      CANDIDATOS e deixamos o banco de dados dizer qual existe de verdade.
-      "1617131" vira o candidato 161/131, que a base confirma ser o Umbreon.
+   1. O modo de página importa. PSM 7 ("uma linha") falha, porque o rodapé tem
+      duas linhas. PSM 6 ("bloco de texto") acerta.
 
-   2. O modo de página importa muito. PSM 7 ("uma linha") falha, porque o
-      rodapé tem duas linhas. PSM 6 ("bloco de texto") acerta.
+   2. Inverter a imagem não muda nada — o Tesseract já lida com texto claro em
+      fundo escuro. O que muda o resultado é o LIMIAR entre preto e branco, e
+      ele precisa variar: carta comum e carta full-art pedem cortes diferentes.
+
+   3. O traço "/" sai errado com frequência: 161/131 vira "1617131". Por isso
+      não confiamos numa leitura só. Montamos uma lista de CANDIDATOS e quem
+      decide qual existe de verdade é o banco de cartas.
    ========================================================================== */
 
 const Ocr = (function () {
@@ -26,20 +29,14 @@ const Ocr = (function () {
   let modoAtual = '';
   let iniciando = null;
 
-  // Tentativas, em ordem, testadas contra cartas comuns, holo e full-art.
-  // O que muda o resultado é o LIMIAR (o ponto de corte entre preto e branco)
-  // e o tamanho — inverter a imagem não muda nada, porque o Tesseract já lida
-  // bem com texto claro em fundo escuro.
-  //
-  // `alturaAlvo` é a altura em pixels para a qual a faixa é ampliada. Usar
-  // altura fixa em vez de "multiplique por 4" mantém o texto sempre do mesmo
-  // tamanho, seja numa câmera de 720p ou de 4K.
   const PASSADAS = [
-    { limiar: 0.92, alturaAlvo: 400 },
-    { limiar: 1.10, alturaAlvo: 600 },
-    { limiar: 0.75, alturaAlvo: 400 },
-    { limiar: 0.95, alturaAlvo: 600 },
+    { limiar: 0.92, alturaAlvo: 420 },
+    { limiar: 1.10, alturaAlvo: 620 },
+    { limiar: 0.75, alturaAlvo: 420 },
+    { limiar: 0.98, alturaAlvo: 700 },
   ];
+
+  const MAX_LEITURAS = 6; // teto de chamadas ao OCR, para não travar o celular
 
   // --- preparo do motor ----------------------------------------------------
 
@@ -74,7 +71,7 @@ const Ocr = (function () {
     if (modo === 'numero') {
       await worker.setParameters({
         tessedit_char_whitelist: '0123456789/',
-        tessedit_pageseg_mode: '6', // bloco de texto: o rodapé tem mais de uma linha
+        tessedit_pageseg_mode: '6',
       });
     } else {
       await worker.setParameters({
@@ -89,8 +86,10 @@ const Ocr = (function () {
   // --- tratamento da imagem ------------------------------------------------
 
   // Recorta um pedaço, amplia até a altura pedida e joga para preto e branco.
+  // A altura fixa (em vez de "multiplique por 4") mantém o texto sempre do
+  // mesmo tamanho, seja numa câmera de 720p ou de 4K.
   function tratar(origem, recorte, alturaAlvo, fatorLimiar) {
-    const escala = Math.min(8, Math.max(1, alturaAlvo / recorte.h));
+    const escala = Math.min(10, Math.max(1, alturaAlvo / recorte.h));
     const largura = Math.max(1, Math.round(recorte.w * escala));
     const altura = Math.max(1, Math.round(recorte.h * escala));
 
@@ -121,6 +120,19 @@ const Ocr = (function () {
     return c;
   }
 
+  // Versão pequena da imagem tratada, para mostrar na tela o que o OCR viu.
+  function miniatura(canvas, larguraMax) {
+    const alvo = larguraMax || 560;
+    if (canvas.width <= alvo) return canvas.toDataURL('image/png');
+    const c = document.createElement('canvas');
+    c.width = alvo;
+    c.height = Math.max(1, Math.round(canvas.height * alvo / canvas.width));
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(canvas, 0, 0, c.width, c.height);
+    return c.toDataURL('image/png');
+  }
+
   // --- candidatos ----------------------------------------------------------
 
   function valido(num, total) {
@@ -137,8 +149,7 @@ const Ocr = (function () {
   }
 
   // De um texto sujo de OCR, tira todas as leituras plausíveis de "num/total",
-  // da mais confiável para a menos. Quem decide qual é a certa é a base de
-  // cartas: basta consultar cada uma até uma existir.
+  // da mais confiável para a menos.
   function candidatos(texto) {
     const t = String(texto || '');
     const achados = [];
@@ -152,8 +163,9 @@ const Ocr = (function () {
       });
     }
 
-    // 1) "125/197" — traço lido corretamente, sem espaço no meio.
     let m;
+
+    // 1) "125/197" — traço lido certo, sem espaço no meio.
     const estrito = /(\d{1,3})\/(\d{1,3})/g;
     while ((m = estrito.exec(t)) !== null) juntar(m[1], m[2], 1);
 
@@ -189,23 +201,22 @@ const Ocr = (function () {
     return achados;
   }
 
-  // Junta os candidatos das várias tentativas e ordena por: quantas vezes
-  // apareceu, depois pela confiabilidade do padrão que o gerou.
+  // Junta os candidatos de todas as leituras e ordena. Padrão confiável vem
+  // antes de leitura repetida: um "125/197" lido uma vez vale mais que um
+  // palpite de recorte que apareceu três vezes.
   function ranquear(listas) {
     const contagem = new Map();
     listas.forEach(function (lista) {
-      const vistosNestaPassada = new Set();
+      const nesta = new Set();
       lista.forEach(function (c) {
         const k = c.num + '/' + c.total;
         const atual = contagem.get(k) || { num: c.num, total: c.total, votos: 0, prioridade: 9 };
-        if (!vistosNestaPassada.has(k)) { atual.votos++; vistosNestaPassada.add(k); }
+        if (!nesta.has(k)) { atual.votos++; nesta.add(k); }
         atual.prioridade = Math.min(atual.prioridade, c.prioridade);
         contagem.set(k, atual);
       });
     });
 
-    // Padrão confiável vem antes de leitura repetida: um "125/197" lido uma
-    // vez vale mais que um palpite de recorte que apareceu três vezes.
     return Array.from(contagem.values()).sort(function (a, b) {
       if (a.prioridade !== b.prioridade) return a.prioridade - b.prioridade;
       return b.votos - a.votos;
@@ -214,51 +225,80 @@ const Ocr = (function () {
 
   // --- leitura do número ---------------------------------------------------
 
-  async function lerNumero(origem, recorte, aoAndar) {
+  // `recortes` pode ser um recorte só ou uma lista deles (o caso da foto, em
+  // que não se sabe onde a carta está). Roda em largura primeiro: testa todas
+  // as faixas com o melhor limiar antes de insistir com limiares piores.
+  async function lerNumero(origem, recortes, aoAndar) {
     await usarModo('numero');
 
+    const faixas = Array.isArray(recortes) ? recortes : [recortes];
     const listas = [];
-    let textoBruto = '';
+    const textos = [];
+    let leituras = 0;
+    let primeiraImagem = null;
 
-    for (let i = 0; i < PASSADAS.length; i++) {
-      if (aoAndar) aoAndar(i / PASSADAS.length);
-      const p = PASSADAS[i];
-      const imagem = tratar(origem, recorte, p.alturaAlvo, p.limiar);
-      const r = await worker.recognize(imagem);
-      const texto = (r.data.text || '').trim();
-      if (texto) textoBruto += (textoBruto ? ' | ' : '') + texto.replace(/\s+/g, ' ');
+    for (let p = 0; p < PASSADAS.length; p++) {
+      for (let f = 0; f < faixas.length; f++) {
+        if (leituras >= MAX_LEITURAS) break;
 
-      listas.push(candidatos(texto));
+        const imagem = tratar(origem, faixas[f], PASSADAS[p].alturaAlvo, PASSADAS[p].limiar);
+        if (!primeiraImagem) primeiraImagem = imagem;
 
-      // Leitura consistente duas vezes seguidas: não precisa gastar mais tempo.
-      if (i >= 1) {
-        const parcial = ranquear(listas);
-        if (parcial.length && parcial[0].votos >= 2 && parcial[0].prioridade <= 3) {
-          return { candidatos: parcial, texto: textoBruto, passadas: i + 1 };
-        }
+        const r = await worker.recognize(imagem);
+        leituras++;
+        if (aoAndar) aoAndar(leituras / MAX_LEITURAS);
+
+        const texto = (r.data.text || '').trim();
+        if (texto) textos.push(texto.replace(/\s+/g, ' '));
+        listas.push(candidatos(texto));
       }
+
+      // Achou leitura no padrão bom? Não precisa insistir: consultar o banco
+      // de cartas custa ~200ms, é mais rápido que outra passada de OCR.
+      const parcial = ranquear(listas);
+      if (parcial.length && parcial[0].prioridade <= 2) {
+        return montar(parcial, textos, primeiraImagem, leituras);
+      }
+      if (leituras >= MAX_LEITURAS) break;
     }
 
-    return { candidatos: ranquear(listas), texto: textoBruto, passadas: PASSADAS.length };
+    return montar(ranquear(listas), textos, primeiraImagem, leituras);
+  }
+
+  function montar(cands, textos, imagem, leituras) {
+    return {
+      candidatos: cands,
+      texto: textos.join(' | '),
+      leituras: leituras,
+      recorteVisto: imagem ? miniatura(imagem) : null,
+    };
   }
 
   // --- leitura do nome -----------------------------------------------------
 
-  // Devolve o texto cru, sem tentar "consertar". A leitura do nome sai suja
-  // ("jiF Pikachy", "Fag harizard Ao") por causa do selo de estágio e do
-  // fundo da arte. Quem compara isso com os nomes candidatos é o app, por
-  // semelhança — exigir leitura perfeita aqui só jogaria fora informação boa.
-  async function lerNome(origem, recorte) {
+  // Devolve o texto cru, sem tentar "consertar". A leitura sai suja por causa
+  // do selo de estágio e do fundo da arte ("jiF Pikachy"); quem compara isso
+  // com os nomes candidatos é o app, por semelhança.
+  async function lerNome(origem, recortes) {
+    if (!recortes) return { texto: '' };
     await usarModo('nome');
 
+    const faixas = Array.isArray(recortes) ? recortes : [recortes];
     const partes = [];
-    for (let i = 0; i < 2; i++) {
-      const imagem = tratar(origem, recorte, 320, PASSADAS[i].limiar);
-      const r = await worker.recognize(imagem);
-      const bruto = (r.data.text || '').replace(/[^A-Za-z ]+/g, ' ').replace(/\s+/g, ' ').trim();
-      if (bruto) partes.push(bruto);
+
+    // Duas tentativas quando há uma faixa só; uma tentativa por faixa quando
+    // não se sabe onde a carta está (caso da foto).
+    const limiares = faixas.length > 1 ? [PASSADAS[0].limiar] : [PASSADAS[0].limiar, PASSADAS[1].limiar];
+
+    for (let f = 0; f < faixas.length; f++) {
+      for (let i = 0; i < limiares.length; i++) {
+        const imagem = tratar(origem, faixas[f], 340, limiares[i]);
+        const r = await worker.recognize(imagem);
+        const bruto = (r.data.text || '').replace(/[^A-Za-z ]+/g, ' ').replace(/\s+/g, ' ').trim();
+        if (bruto) partes.push(bruto);
+      }
     }
-    return { texto: partes.join(' '), passadas: partes.length };
+    return { texto: partes.join(' ') };
   }
 
   async function encerrar() {

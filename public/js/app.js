@@ -176,6 +176,21 @@
     }
     const buscarLiga = cartas.length <= 3;
     cartas.forEach(function (c) { el.appendChild(elemCarta(c, { buscarLiga: buscarLiga })); });
+    if (!buscarLiga) completarPrecos(el, cartas);
+  }
+
+  // A busca por nome devolve a carta enxuta, sem preço — assim ela aparece na
+  // tela em menos de meio segundo. Os preços entram logo depois, em paralelo.
+  function completarPrecos(el, cartas) {
+    const caixas = el.querySelectorAll('.carta .preco');
+    cartas.slice(0, 14).forEach(function (c, i) {
+      if (c.completa || !c.id) return;
+      Api.detalhar(c.id).then(function (cheia) {
+        if (!cheia) return;
+        Object.assign(c, cheia);
+        if (caixas[i]) mostrarPrecoConhecido(caixas[i], c);
+      }).catch(function () { /* fica sem preço mesmo */ });
+    });
   }
 
   // --- detalhe da carta ----------------------------------------------------
@@ -203,6 +218,15 @@
     const cfg = Store.config();
     const alvo = $('modal-conteudo');
     $('modal').classList.remove('oculto');
+
+    // Carta vinda da busca por nome chega enxuta: sem preço, raridade nem
+    // artista. Completa agora, que é quando esses dados vão aparecer.
+    if (!carta.completa && carta.id) {
+      try {
+        const cheia = await Api.detalhar(carta.id);
+        if (cheia) carta = Object.assign(carta, cheia);
+      } catch (e) { /* mostra o que tem */ }
+    }
 
     alvo.innerHTML = '';
 
@@ -343,14 +367,39 @@
     elProg.style.width = Math.round(fracao * 100) + '%';
   }
 
+  const DICAS = {
+    numero: 'Encha a tarja branca com o número do rodapé (ex.: 125/197). Quanto maior o número aparecer, melhor.',
+    carta: 'Encaixe a carta inteira na moldura. Só funciona bem se a câmera for boa — na dúvida, use "Só o número".',
+  };
+
+  function mostrarDica() {
+    const m = Scanner.modoAtual();
+    const el = $('dica-modo');
+    el.textContent = DICAS[m];
+    el.hidden = false;
+  }
+
   $('btn-camera').addEventListener('click', async function () {
     try {
       status(elStatus, 'Pedindo acesso à câmera…');
-      await Scanner.ligar($('video'), $('guia'), $('camera-caixa'));
+      const info = await Scanner.ligar($('video'), $('guia'), $('camera-caixa'));
       $('camera-vazia').classList.add('oculto');
       $('barra-camera').hidden = false;
-      $('btn-lanterna').hidden = !Scanner.temLanterna();
-      status(elStatus, 'Encaixe a carta na moldura. A faixa vermelha tem que cobrir o número do rodapé.');
+      $('modos').hidden = false;
+      $('btn-lanterna').hidden = !info.temLanterna;
+      mostrarDica();
+
+      if (info.temZoom && info.zoom) {
+        const z = $('in-zoom');
+        z.min = info.zoom.min;
+        z.max = info.zoom.max;
+        z.step = (info.zoom.max - info.zoom.min) / 20;
+        z.value = info.zoom.atual;
+        $('linha-zoom').hidden = false;
+      }
+
+      const r = info.resolucao;
+      status(elStatus, r ? 'Câmera em ' + r.w + '×' + r.h + '. ' + DICAS[Scanner.modoAtual()] : '');
     } catch (e) {
       status(elStatus, e.message || String(e), 'erro');
     }
@@ -360,7 +409,24 @@
     Scanner.desligar();
     $('camera-vazia').classList.remove('oculto');
     $('barra-camera').hidden = true;
+    $('modos').hidden = true;
+    $('linha-zoom').hidden = true;
+    $('dica-modo').hidden = true;
     status(elStatus, '');
+  });
+
+  document.querySelectorAll('.modo').forEach(function (b) {
+    b.addEventListener('click', function () {
+      Scanner.definirModo(b.dataset.modo);
+      document.querySelectorAll('.modo').forEach(function (o) {
+        o.classList.toggle('ativo', o === b);
+      });
+      mostrarDica();
+    });
+  });
+
+  $('in-zoom').addEventListener('input', function () {
+    Scanner.definirZoom($('in-zoom').value);
   });
 
   $('btn-lanterna').addEventListener('click', async function () {
@@ -372,7 +438,8 @@
     const btn = $('btn-capturar');
     btn.disabled = true;
     try {
-      await escanear();
+      const captura = Scanner.capturar();
+      await analisar(captura);
     } catch (e) {
       status(elStatus, e.message || String(e), 'erro');
     } finally {
@@ -380,6 +447,53 @@
       progresso(null);
     }
   });
+
+  // --- foto tirada pelo app de câmera do celular --------------------------
+  //
+  // A câmera nativa tira foto em resolução muito maior que o vídeo e com foco
+  // melhor. Vale como saída quando o modo ao vivo não consegue ler.
+
+  $('btn-foto').addEventListener('click', function () { $('in-foto').click(); });
+
+  $('in-foto').addEventListener('change', async function (e) {
+    const arquivo = e.target.files && e.target.files[0];
+    if (!arquivo) return;
+    e.target.value = '';
+
+    status(elStatus, 'Abrindo a foto…');
+    try {
+      const url = URL.createObjectURL(arquivo);
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      URL.revokeObjectURL(url);
+
+      const captura = Scanner.daImagem(img);
+      await analisar(captura);
+    } catch (err) {
+      status(elStatus, 'Não consegui abrir essa foto: ' + (err.message || err), 'erro');
+    } finally {
+      progresso(null);
+    }
+  });
+
+  // --- diagnóstico ---------------------------------------------------------
+  //
+  // Quando a leitura falha, é impossível adivinhar o motivo sem ver o que o
+  // OCR recebeu. Este painel mostra exatamente isso.
+
+  function mostrarDiagnostico(leitura, captura) {
+    const d = $('diagnostico');
+    d.classList.remove('oculto');
+    const r = captura.resolucao;
+    $('diag-resumo').textContent =
+      'Imagem de ' + r.w + '×' + r.h + ' · ' + leitura.leituras + ' leitura(s) · ' +
+      'candidatos: ' + (leitura.candidatos.slice(0, 5).map(function (c) {
+        return c.num + '/' + c.total;
+      }).join(', ') || 'nenhum');
+    $('diag-texto').textContent = 'Texto lido: ' + (leitura.texto || '(nada)');
+    if (leitura.recorteVisto) $('diag-imagem').src = leitura.recorteVisto;
+  }
 
   // --- desempate pelo nome -------------------------------------------------
 
@@ -428,9 +542,8 @@
     return null;
   }
 
-  async function escanear() {
+  async function analisar(captura) {
     const cfg = Store.config();
-    const captura = Scanner.capturar();
 
     status(elStatus, 'Preparando o leitor…');
     progresso(0.05);
@@ -441,15 +554,19 @@
       }
     });
 
-    status(elStatus, 'Lendo o número da carta…');
-    const leitura = await Ocr.lerNumero(captura.quadro, captura.numero, function (f) {
+    status(elStatus, 'Lendo o número…');
+    const faixas = captura.faixas || captura.numero;
+    const leitura = await Ocr.lerNumero(captura.quadro, faixas, function (f) {
       progresso(0.35 + f * 0.30);
     });
 
+    mostrarDiagnostico(leitura, captura);
+
     if (!leitura.candidatos.length) {
       status(elStatus,
-        'Não consegui ler o número' + (leitura.texto ? ' (li "' + leitura.texto + '")' : '') +
-        '. Aproxime mais, melhore a luz ou digite o número na mão abaixo.', 'erro');
+        'Não consegui ler o número. Abra "Ver o que a câmera leu" logo abaixo: se o recorte não mostrar ' +
+        'o número grande e nítido, aproxime mais ou use o zoom. Também dá para digitar na mão.', 'erro');
+      desenharResultados($('resultado-scan'), [], '');
       return;
     }
 
@@ -469,55 +586,157 @@
       }
     } catch (e) { /* sem a lista, tenta todos mesmo */ }
 
-    let cartas = [];
-    let acertou = null;
+    // Consultar o banco custa ~200ms, então dá para testar os candidatos em
+    // paralelo em vez de um a um. Vence o de melhor posição que existir.
+    const tentar = candidatos.slice(0, 6);
+    status(elStatus, 'Conferindo ' + tentar.map(function (c) {
+      return c.num + '/' + c.total;
+    }).slice(0, 3).join(', ') + '…');
 
-    for (let i = 0; i < Math.min(candidatos.length, 8); i++) {
-      const c = candidatos[i];
-      status(elStatus, 'Conferindo ' + c.num + '/' + c.total + '…');
+    const respostas = await Promise.all(tentar.map(function (c) {
+      return Api.identificarPorNumero(c.num, c.total, '')
+        .then(function (r) { return { c: c, cartas: r.cartas || [] }; })
+        .catch(function () { return { c: c, cartas: [] }; });
+    }));
+
+    const comCartas = respostas.filter(function (r) { return r.cartas.length; });
+
+    // Reúne tudo que o número achou.
+    let opcoes = [];
+    comCartas.forEach(function (r) {
+      r.cartas.forEach(function (c) { opcoes.push({ carta: c, lido: r.c, via: 'numero' }); });
+    });
+
+    // --- conferência pelo nome --------------------------------------------
+    //
+    // Só o número não basta. Se o OCR perder um dígito e ler "25/197" em vez
+    // de "125/197", as duas cartas existem, e o app entregaria a errada com
+    // toda a confiança. O nome resolve isso de duas formas: descarta a carta
+    // errada e, melhor ainda, encontra a certa — uma busca por "harizard"
+    // filtrada pelos totais lidos chega em Charizard ex 125/197.
+
+    let nomeLido = '';
+    if (cfg.lerNome && captura.nome) {
+      status(elStatus, 'Conferindo pelo nome da carta…');
+      progresso(0.82);
       try {
-        const r = await Api.identificarPorNumero(c.num, c.total, '');
-        if (r.cartas && r.cartas.length) {
-          cartas = r.cartas;
-          acertou = c;
-          break;
-        }
-      } catch (e) { /* tenta o próximo candidato */ }
+        nomeLido = (await Ocr.lerNome(captura.quadro, captura.nome)).texto || '';
+      } catch (e) { /* segue só com o número */ }
     }
 
-    if (!acertou) {
-      const tentados = candidatos.slice(0, 3)
+    const pedaco = pedacoDeNome(nomeLido);
+    if (pedaco) {
+      const totaisLidos = {};
+      tentar.forEach(function (c) { totaisLidos[c.total] = true; });
+      try {
+        const porNome = await Api.buscarPorNome(pedaco, 60);
+        (porNome.cartas || []).forEach(function (c) {
+          if (!totaisLidos[c.total]) return;
+          if (opcoes.some(function (o) { return o.carta.id === c.id; })) return;
+          opcoes.push({ carta: c, lido: { num: c.num, total: c.total }, via: 'nome' });
+        });
+      } catch (e) { /* sem essa ajuda, segue com o número */ }
+    }
+
+    if (!opcoes.length) {
+      const tentados = tentar.slice(0, 3)
         .map(function (c) { return c.num + '/' + c.total; }).join(', ');
       status(elStatus,
         'Li algo parecido com ' + tentados + ', mas nenhuma dessas cartas existe na base. ' +
-        'Tente de novo com mais luz ou digite o número na mão.', 'erro');
+        'Veja o recorte em "Ver o que a câmera leu" — provavelmente saiu pequeno ou borrado.', 'erro');
       desenharResultados($('resultado-scan'), [], '');
       return;
     }
 
-    // Duas coleções podem ter o mesmo total. Aí o nome desempata.
-    if (cartas.length > 1 && cfg.lerNome) {
-      status(elStatus, acertou.num + '/' + acertou.total + ' deu ' + cartas.length +
-        ' cartas. Lendo o nome para desempatar…');
-      progresso(0.88);
-      try {
-        const n = await Ocr.lerNome(captura.quadro, captura.nome);
-        const escolhida = melhorPorNome(cartas, n.texto);
-        if (escolhida) cartas = [escolhida];
-      } catch (e) { /* segue mostrando todas as opções */ }
-    }
+    const numsLidos = tentar.map(function (c) { return c.num; });
+    const filtrou = pedaco ? ordenarOpcoes(opcoes, nomeLido, numsLidos) : false;
+    let cartas = opcoes.map(function (o) { return o.carta; });
+    const escolhida = cartas.length === 1 ? cartas[0] : null;
+    const lido = opcoes[0].lido;
 
     progresso(1);
     ultimaLista = cartas;
 
-    status(elStatus,
-      cartas.length === 1
-        ? 'Achei: ' + cartas[0].nome + ' — ' + cartas[0].set + ' (' + acertou.num + '/' + acertou.total + ').'
-        : 'Achei ' + cartas.length + ' possibilidades para ' + acertou.num + '/' + acertou.total + '. Escolha a certa:',
-      'bom');
+    if (cartas.length === 1) {
+      const c = cartas[0];
+      status(elStatus,
+        'Achei: ' + c.nome + ' — ' + c.set + ' (' + c.num + '/' + c.total + ')' +
+        (filtrou ? ', conferido pelo nome.' : '.') +
+        (!pedaco ? ' Não consegui ler o nome, então confira se é essa mesmo.' : ''),
+        'bom');
+    } else if (filtrou) {
+      status(elStatus, 'O nome bate com ' + cartas.length + ' cartas (mesma carta em artes ' +
+        'diferentes). A primeira é a mais provável — confira o número no rodapé:', 'bom');
+    } else {
+      status(elStatus, 'Achei ' + cartas.length + ' possibilidades para ' +
+        lido.num + '/' + lido.total + '. Escolha a certa:', 'bom');
+    }
 
     desenharResultados($('resultado-scan'), cartas, '');
     if (cartas.length === 1) abrirDetalhe(cartas[0]);
+  }
+
+  // Reordena as opções no lugar, usando o nome lido e o número lido, e joga
+  // fora o que o nome contradiz. Devolve true se conseguiu filtrar por nome.
+  //
+  // Por que o número entra como segundo critério: uma carta como "Charizard ex"
+  // aparece 4 vezes na mesma coleção (artes alternativas), com nomes idênticos.
+  // O nome empata, então quem desempata é a semelhança do número — se o OCR
+  // leu "25", o 125 é bem mais provável que o 228, porque "25" termina o 125.
+  function ordenarOpcoes(opcoes, nomeLido, numsLidos) {
+    const lido = soLetras(nomeLido);
+
+    opcoes.forEach(function (o) {
+      const nome = soLetras(o.carta.nome);
+      o.notaNome = nome ? maiorTrechoComum(lido, nome) / nome.length : 0;
+      o.notaNum = 0;
+      const num = String(o.carta.num || '');
+      numsLidos.forEach(function (n) {
+        if (!n) return;
+        if (num === n) o.notaNum = Math.max(o.notaNum, 3);
+        else if (num.length > n.length && num.slice(-n.length) === n) o.notaNum = Math.max(o.notaNum, 2);
+        else if (num.indexOf(n) !== -1) o.notaNum = Math.max(o.notaNum, 1);
+      });
+    });
+
+    // "Raichu" e "Pikachu" dividem o trecho "chu", então um corte fixo deixa
+    // os dois passarem. O corte também é relativo ao melhor: quem ficou bem
+    // atrás do primeiro colocado sai.
+    const melhorNota = opcoes.reduce(function (m, o) { return Math.max(m, o.notaNome); }, 0);
+    const corte = Math.max(0.5, melhorNota - 0.2);
+    const bons = opcoes.filter(function (o) { return o.notaNome >= corte; });
+    const usar = bons.length ? bons : opcoes;
+
+    // O nome manda. O número só desempata entre nomes praticamente iguais —
+    // é o caso das artes alternativas, que têm o mesmo nome e números
+    // diferentes.
+    usar.sort(function (a, b) {
+      const dif = b.notaNome - a.notaNome;
+      if (Math.abs(dif) > 0.12) return dif;
+      if (b.notaNum !== a.notaNum) return b.notaNum - a.notaNum;
+      return dif;
+    });
+
+    // Cópia antes de esvaziar: quando não há nome bom, `usar` É o próprio
+    // `opcoes`, e limpar um limparia o outro.
+    const ordenadas = usar.slice();
+    opcoes.length = 0;
+    ordenadas.forEach(function (o) { opcoes.push(o); });
+
+    // true = o nome foi útil, dá para confiar mais no resultado.
+    return bons.length > 0;
+  }
+
+  // Tira do texto sujo do OCR um pedaço que sirva de busca. A busca da base é
+  // por substring, então "harizard" já encontra Charizard.
+  const RUIDO = ['stage', 'basic', 'evolves', 'from', 'illus', 'pokemon', 'trainer',
+    'energy', 'ability', 'rule', 'when', 'your', 'this'];
+
+  function pedacoDeNome(texto) {
+    const palavras = String(texto || '').toLowerCase().match(/[a-z]{4,}/g) || [];
+    const uteis = palavras.filter(function (p) { return RUIDO.indexOf(p) === -1; });
+    if (!uteis.length) return '';
+    return uteis.sort(function (a, b) { return b.length - a.length; })[0];
   }
 
   // --- identificação manual ------------------------------------------------
