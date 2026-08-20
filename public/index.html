@@ -150,6 +150,16 @@
     </div>
 
     <div class="cartao-ajuste">
+      <h3>Estado de conservação</h3>
+      <p class="ajuda">Quanto vale a carta em cada estado, em relação a uma NM. A
+        LigaPokémon publica o preço de cada anúncio como imagem, de propósito, então
+        não dá para trazer o valor real por estado — estes são números de referência
+        de mercado. Ajuste como preferir.</p>
+      <div id="lista-estados"></div>
+      <button id="btn-estados-padrao" class="btn pequeno" type="button">Voltar ao padrão</button>
+    </div>
+
+    <div class="cartao-ajuste">
       <h3>Scanner</h3>
       <label class="linha-check">
         <input id="chk-nome" type="checkbox" checked>
@@ -158,6 +168,12 @@
       <label class="linha-check">
         <input id="chk-liga" type="checkbox" checked>
         <span>Consultar preço na LigaPokémon automaticamente</span>
+      </label>
+      <label class="linha-check">
+        <input id="chk-pocket" type="checkbox">
+        <span>Incluir cartas do Pokémon TCG Pocket (jogo de celular). Desligado,
+          porque elas colidem com cartas reais — "Paldean Wonders" tem 131 cards,
+          o mesmo total de Prismatic Evolutions.</span>
       </label>
     </div>
 

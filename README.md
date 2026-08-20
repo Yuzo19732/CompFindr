@@ -162,6 +162,45 @@ Os dados ficam só no navegador do aparelho. Use **Ajustes → Exportar** para n
 
 ---
 
+## Estado de conservação (M, NM, SP, MP, HP, D)
+
+Cada carta mostra uma tabela de valor estimado por estado, usando as siglas da
+LigaPokémon:
+
+| Sigla | Significado | Padrão |
+| --- | --- | --- |
+| M | Nova | 115% |
+| NM | Praticamente Nova | 100% (referência) |
+| SP | Usada Levemente | 85% |
+| MP | Usada Moderadamente | 70% |
+| HP | Muito Usada | 50% |
+| D | Danificada | 30% |
+
+**Estes valores são estimativa, não dado da LigaPokémon** — e é importante saber por
+quê. A Liga tem sim o preço de cada anúncio por estado, mas publica esses números
+como **imagem** (um sprite de CSS onde cada dígito é um pedaço de um JPEG), de
+propósito, para que não sejam lidos por programa. O filtro de qualidade também não
+muda os valores agregados que eles publicam em texto. Ler aquilo exigiria contornar
+uma proteção que eles colocaram deliberadamente, então o app não faz isso.
+
+O que ele faz é aplicar proporções de mercado sobre um preço de referência — o preço
+médio da Liga quando existe, senão o do TCGPlayer. As proporções são editáveis em
+**Ajustes → Estado de conservação**, porque variam por carta e por época.
+
+---
+
+## Cartas do jogo de celular
+
+As coleções do **Pokémon TCG Pocket** ficam de fora por padrão. Elas não são cartas
+físicas e atrapalhavam de dois jeitos: ocupavam lugar na busca por nome (numa busca
+por "pikachu", 16 dos 60 resultados eram do jogo) e colidiam por número — "Paldean
+Wonders" tem 131 cards, o mesmo total de Prismatic Evolutions, então um `161/131`
+podia cair na coleção errada.
+
+Dá para religar em **Ajustes → Scanner**, se um dia fizer sentido.
+
+---
+
 ## Quando não conseguir ler a carta
 
 Abra **"Ver o que a câmera leu"** logo abaixo do botão. O recorte mostrado é
@@ -185,6 +224,6 @@ mesma tela, em "Digitar o número na mão".
 ## Ainda por fazer
 
 - PriceCharting e Collectr como fontes adicionais de preço.
-- Quantidade e condição da carta na coleção (hoje é só "tenho / não tenho").
+- Quantidade e condição real da carta na coleção (hoje o estado é estimativa geral).
 - Alerta de pechincha: avisar quando uma carta da wishlist cair abaixo de um valor.
 - Histórico de preço com gráfico.

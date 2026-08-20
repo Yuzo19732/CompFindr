@@ -85,7 +85,14 @@
       return Api.liga(carta.nome, carta.num, carta.total);
     }).then(function (r) {
       const achado = (r.resultados || [])[0] || null;
-      return { achado: achado, indisponivel: !!r.indisponivel, erro: r.erro || null };
+      return {
+        achado: achado,
+        // Serve mesmo sem anúncio nenhum: é por onde a pessoa confere a carta
+        // na Liga por conta própria.
+        urlBusca: r.urlBusca || '',
+        indisponivel: !!r.indisponivel,
+        erro: r.erro || null,
+      };
     });
 
     cacheLiga.set(k, promessa);
@@ -214,6 +221,68 @@
     return d;
   }
 
+  // --- preço por estado de conservação -------------------------------------
+  //
+  // A LigaPokémon publica o preço de cada anúncio como IMAGEM (sprite de CSS),
+  // de propósito, para não ser lido por programa. Então não dá para trazer o
+  // preço real de cada estado de lá, e inventar que dá seria pior.
+  //
+  // O que este bloco faz é aplicar as proporções de mercado sobre um preço de
+  // referência, deixando claro que é estimativa. As proporções ficam
+  // editáveis em Ajustes, porque variam por carta e por época.
+
+  function baseDeReferencia(carta, achado, cfg) {
+    if (achado && achado.precoMed != null) {
+      return { valor: achado.precoMed, texto: 'preço médio na LigaPokémon' };
+    }
+    if (achado && achado.precoMin != null) {
+      return { valor: achado.precoMin, texto: 'menor preço na LigaPokémon' };
+    }
+    if (carta.precoUSD != null) {
+      return { valor: carta.precoUSD * cfg.usdBrl, texto: 'preço de mercado do TCGPlayer' };
+    }
+    if (carta.precoEUR != null) {
+      return { valor: carta.precoEUR * cfg.eurBrl, texto: 'tendência do Cardmarket' };
+    }
+    return null;
+  }
+
+  function blocoEstados(carta, achado, cfg) {
+    const caixa = document.createElement('div');
+    caixa.className = 'estados';
+
+    const base = baseDeReferencia(carta, achado, cfg);
+    if (!base) {
+      caixa.innerHTML = '<p class="ajuda">Sem preço de referência para estimar os estados.</p>';
+      return caixa;
+    }
+
+    const titulo = document.createElement('div');
+    titulo.className = 'estados-titulo';
+    titulo.textContent = 'Preço por estado (estimativa)';
+    caixa.appendChild(titulo);
+
+    Store.ESTADOS.forEach(function (e) {
+      const fator = cfg.estados[e.sigla];
+      const linha = document.createElement('div');
+      linha.className = 'estado-linha' + (e.sigla === 'NM' ? ' referencia' : '');
+      linha.innerHTML =
+        '<span class="sigla">' + e.sigla + '</span>' +
+        '<span class="descricao">' + e.nome + '</span>' +
+        '<span class="valor">' + (brl(base.valor * fator) || '—') + '</span>';
+      caixa.appendChild(linha);
+    });
+
+    const nota = document.createElement('p');
+    nota.className = 'ajuda';
+    nota.textContent = 'Calculado sobre o ' + base.texto + ' (' + brl(base.valor) + '), ' +
+      'tratado como NM. A Liga não publica o preço por estado de forma legível, ' +
+      'então isto é referência de mercado — ajuste as proporções em Ajustes.';
+    caixa.appendChild(nota);
+
+    return caixa;
+  }
+
   async function abrirDetalhe(carta) {
     const cfg = Store.config();
     const alvo = $('modal-conteudo');
@@ -306,7 +375,9 @@
     } else {
       const p = document.createElement('p');
       p.className = 'ajuda';
-      p.textContent = 'Sem anúncio dessa carta na LigaPokémon agora.';
+      p.textContent = r.achado
+        ? 'A LigaPokémon tem essa carta cadastrada, mas ninguém está vendendo agora.'
+        : 'Sem anúncio dessa carta na LigaPokémon agora.';
       precos.appendChild(p);
     }
 
@@ -325,13 +396,21 @@
       ));
     }
 
-    if (r.achado && r.achado.url) {
+    // Estimativa por estado de conservação.
+    precos.appendChild(blocoEstados(carta, r.achado, cfg));
+
+    // O link vai sempre, tenha anúncio ou não — é assim que dá para conferir a
+    // carta na Liga mesmo quando ninguém está vendendo.
+    const destino = (r.achado && r.achado.url) || r.urlBusca;
+    if (destino) {
       const a = document.createElement('a');
       a.className = 'link-liga';
-      a.href = r.achado.url;
+      a.href = destino;
       a.target = '_blank';
       a.rel = 'noopener';
-      a.textContent = 'Ver anúncios na LigaPokémon →';
+      a.textContent = (r.achado && r.achado.precoMin != null)
+        ? 'Ver anúncios na LigaPokémon →'
+        : 'Abrir essa carta na LigaPokémon →';
       precos.appendChild(a);
     }
 
@@ -872,7 +951,70 @@
     $('in-eur').value = cfg.eurBrl;
     $('chk-nome').checked = !!cfg.lerNome;
     $('chk-liga').checked = !!cfg.consultarLiga;
+    $('chk-pocket').checked = !!cfg.incluirPocket;
+    desenharEstados();
   }
+
+  function desenharEstados() {
+    const cfg = Store.config();
+    const el = $('lista-estados');
+    el.innerHTML = '';
+
+    Store.ESTADOS.forEach(function (e) {
+      const linha = document.createElement('div');
+      linha.className = 'linha-estado';
+
+      const sigla = document.createElement('span');
+      sigla.className = 'sigla';
+      sigla.textContent = e.sigla;
+
+      const nome = document.createElement('span');
+      nome.className = 'descricao';
+      nome.textContent = e.nome;
+
+      const campo = document.createElement('input');
+      campo.type = 'number';
+      campo.min = '0';
+      campo.max = '300';
+      campo.step = '1';
+      campo.value = Math.round(cfg.estados[e.sigla] * 100);
+      campo.addEventListener('change', function () {
+        const v = Number(campo.value);
+        if (!Number.isFinite(v) || v < 0) { campo.value = Math.round(cfg.estados[e.sigla] * 100); return; }
+        const estados = Object.assign({}, Store.config().estados);
+        estados[e.sigla] = v / 100;
+        Store.salvarConfig({ estados: estados });
+      });
+
+      const pct = document.createElement('span');
+      pct.className = 'pct';
+      pct.textContent = '%';
+
+      linha.appendChild(sigla);
+      linha.appendChild(nome);
+      linha.appendChild(campo);
+      linha.appendChild(pct);
+      el.appendChild(linha);
+    });
+  }
+
+  $('btn-estados-padrao').addEventListener('click', function () {
+    Store.salvarConfig({ estados: Object.assign({}, Store.ESTADOS_PADRAO) });
+    desenharEstados();
+    avisar('Proporções restauradas.');
+  });
+
+  $('chk-pocket').addEventListener('change', async function () {
+    Store.salvarConfig({ incluirPocket: $('chk-pocket').checked });
+    try {
+      await Api.reindexar();
+      avisar($('chk-pocket').checked
+        ? 'Cartas do jogo de celular incluídas.'
+        : 'Cartas do jogo de celular removidas.');
+    } catch (e) {
+      avisar('Não consegui recarregar a lista de coleções.');
+    }
+  });
 
   $('in-usd').addEventListener('change', function () {
     Store.salvarConfig({ usdBrl: Number($('in-usd').value) || 5.4 });

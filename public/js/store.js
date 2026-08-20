@@ -14,11 +14,22 @@ const Store = (function () {
     config: 'cc.config',
   };
 
+  // Quanto vale uma carta em cada estado de conservação, em relação a uma NM.
+  // São as siglas da LigaPokémon: M (Nova), NM (Praticamente Nova), SP (Usada
+  // Levemente), MP (Usada Moderadamente), HP (Muito Usada), D (Danificada).
+  //
+  // Estes números são referência de mercado, não dado da Liga: o preço de cada
+  // anúncio deles é publicado como imagem, justamente para não ser lido por
+  // programa. Ficam editáveis porque a proporção varia por carta e por época.
+  const ESTADOS_PADRAO = { M: 1.15, NM: 1.00, SP: 0.85, MP: 0.70, HP: 0.50, D: 0.30 };
+
   const CONFIG_PADRAO = {
     usdBrl: 5.4,
     eurBrl: 6.0,
     lerNome: true,
     consultarLiga: true,
+    incluirPocket: false,   // cartas do jogo de celular (Pokémon TCG Pocket)
+    estados: ESTADOS_PADRAO,
     cotacaoEm: 0,
   };
 
@@ -46,8 +57,19 @@ const Store = (function () {
   // --- configuração --------------------------------------------------------
 
   function config() {
-    return Object.assign({}, CONFIG_PADRAO, ler(CHAVES.config, {}));
+    const c = Object.assign({}, CONFIG_PADRAO, ler(CHAVES.config, {}));
+    c.estados = Object.assign({}, ESTADOS_PADRAO, c.estados || {});
+    return c;
   }
+
+  const ORDEM_ESTADOS = [
+    { sigla: 'M', nome: 'Nova' },
+    { sigla: 'NM', nome: 'Praticamente Nova' },
+    { sigla: 'SP', nome: 'Usada Levemente' },
+    { sigla: 'MP', nome: 'Usada Moderadamente' },
+    { sigla: 'HP', nome: 'Muito Usada' },
+    { sigla: 'D', nome: 'Danificada' },
+  ];
 
   function salvarConfig(parcial) {
     const nova = Object.assign(config(), parcial);
@@ -139,6 +161,8 @@ const Store = (function () {
   return {
     config: config,
     salvarConfig: salvarConfig,
+    ESTADOS: ORDEM_ESTADOS,
+    ESTADOS_PADRAO: ESTADOS_PADRAO,
     lista: lista,
     chaveDe: chaveDe,
     tem: tem,

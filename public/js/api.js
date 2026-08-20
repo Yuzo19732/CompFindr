@@ -57,10 +57,11 @@ const Api = (function () {
 
   // --- coleções ------------------------------------------------------------
 
-  function indexarSets(lista) {
+  function indexarSets(lista, excluir) {
     mapaSets = {};
     porTotal = {};
     lista.forEach(function (s, i) {
+      if (excluir && excluir[s.id]) return;
       const c = s.cardCount || {};
       mapaSets[s.id] = {
         id: s.id,
@@ -78,6 +79,30 @@ const Api = (function () {
     });
   }
 
+  // As coleções do Pokémon TCG Pocket (o jogo de celular) não são cartas de
+  // verdade e atrapalham de dois jeitos: aparecem na busca por nome e, pior,
+  // colidem por número — "Paldean Wonders" tem 131 cards, o mesmo total de
+  // Prismatic Evolutions, então um "161/131" podia cair na coleção errada.
+  // Ficam de fora por padrão; dá para religar em Ajustes.
+  async function idsDoPocket() {
+    try {
+      const s = await pegarJson(TCG + '/series/tcgp', 15000);
+      const fora = {};
+      (s.sets || []).forEach(function (x) { fora[x.id] = true; });
+      return fora;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function querPocket() {
+    try {
+      return !!(typeof Store !== 'undefined' && Store.config().incluirPocket);
+    } catch (e) {
+      return false;
+    }
+  }
+
   async function carregarSets() {
     if (mapaSets) return mapaSets;
     if (carregandoSets) return carregandoSets;
@@ -86,15 +111,19 @@ const Api = (function () {
       try {
         const guardado = JSON.parse(localStorage.getItem(CHAVE_SETS) || 'null');
         if (guardado && Date.now() - guardado.em < VALIDADE_SETS && guardado.lista.length) {
-          indexarSets(guardado.lista);
+          indexarSets(guardado.lista, querPocket() ? null : (guardado.pocket || {}));
           return mapaSets;
         }
       } catch (e) { /* cache ruim, baixa de novo */ }
 
-      const lista = await pegarJson(TCG + '/sets', 20000);
-      indexarSets(lista);
+      const [lista, pocket] = await Promise.all([
+        pegarJson(TCG + '/sets', 20000),
+        idsDoPocket(),
+      ]);
+
+      indexarSets(lista, querPocket() ? null : pocket);
       try {
-        localStorage.setItem(CHAVE_SETS, JSON.stringify({ em: Date.now(), lista: lista }));
+        localStorage.setItem(CHAVE_SETS, JSON.stringify({ em: Date.now(), lista: lista, pocket: pocket }));
       } catch (e) { /* sem espaço, segue só em memória */ }
       return mapaSets;
     })();
@@ -104,6 +133,13 @@ const Api = (function () {
     } finally {
       carregandoSets = null;
     }
+  }
+
+  // Chamado quando a pessoa liga/desliga as cartas do jogo de celular.
+  function reindexar() {
+    mapaSets = null;
+    porTotal = null;
+    return carregarSets();
   }
 
   // --- conversão das cartas ------------------------------------------------
@@ -237,7 +273,9 @@ const Api = (function () {
     const lista = await pegarJson(TCG + '/cards?name=like:' + encodeURIComponent(termo), 20000);
     if (!Array.isArray(lista)) return { fonte: 'tcgdex.net', cartas: [] };
 
+    // Coleção fora do índice = coleção excluída (jogo de celular). Sai da lista.
     const cartas = lista.map(simplificarBreve)
+      .filter(function (c) { return c.setId && mapaSets[c.setId]; })
       .sort(function (a, b) { return b.ordem - a.ordem; })
       .slice(0, limite || 24);
 
@@ -336,6 +374,7 @@ const Api = (function () {
 
   return {
     carregarSets: carregarSets,
+    reindexar: reindexar,
     identificarPorNumero: function (num, total, nome) {
       return comReserva(function () { return identificarPorNumero(num, total, nome); },
         { num: num, total: total });

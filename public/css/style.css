@@ -404,6 +404,48 @@ input:focus { outline: 2px solid var(--destaque-2); outline-offset: -1px; }
 .preco-linha .valor small { display: block; font-weight: 500; font-size: .72rem; color: var(--texto-fraco); text-align: right; }
 .preco-linha .valor.verde { color: var(--ok); }
 
+/* ---------- estados de conservação ---------- */
+
+.estados {
+  margin-top: 4px;
+  background: var(--fundo-3);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  padding: 12px;
+}
+.estados-titulo { font-size: .9rem; font-weight: 650; margin-bottom: 8px; }
+.estado-linha {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 1px solid rgba(255, 255, 255, .05);
+}
+.estado-linha:first-of-type { border-top: none; }
+.estado-linha .sigla {
+  font-weight: 700; font-size: .78rem;
+  color: var(--destaque-2);
+}
+.estado-linha .descricao { font-size: .78rem; color: var(--texto-fraco); }
+.estado-linha .valor { font-weight: 650; font-size: .92rem; white-space: nowrap; }
+.estado-linha.referencia .sigla { color: var(--ok); }
+.estado-linha.referencia .valor { color: var(--ok); }
+.estados .ajuda { margin-top: 10px; }
+
+.linha-estado {
+  display: grid;
+  grid-template-columns: 34px 1fr 74px 14px;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.linha-estado .sigla { font-weight: 700; font-size: .8rem; color: var(--destaque-2); }
+.linha-estado .descricao { font-size: .8rem; color: var(--texto-fraco); }
+.linha-estado input { width: 100%; padding: 7px 8px; font-size: .88rem; }
+.linha-estado .pct { font-size: .8rem; color: var(--texto-fraco); }
+#btn-estados-padrao { margin-top: 14px; }
+
 .faixa { display: flex; gap: 6px; margin-top: 4px; font-size: .74rem; color: var(--texto-fraco); }
 .acoes-detalhe { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 .acoes-detalhe .btn { flex: 1; min-width: 130px; }
