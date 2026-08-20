@@ -310,21 +310,42 @@ const Api = (function () {
 
   // --- LigaPokémon (precisa do servidor) ----------------------------------
 
+  // A LigaPokémon responde 403 para os servidores do Netlify nos EUA. A rota
+  // /api/liga roda na borda, perto de quem acessa (no Brasil, um servidor no
+  // Brasil), e passa. A função normal fica como segunda tentativa.
+  const ROTAS_LIGA = ['/api/liga', FUNCS + '/liga'];
+  let rotaLigaBoa = null;
+
   async function liga(nome, num, total) {
     if (temFuncoes === false) return { resultados: [], indisponivel: true };
 
     const p = new URLSearchParams({ nome: nome });
     if (num) p.set('num', String(num));
     if (total) p.set('total', String(total));
+    const qs = '?' + p.toString();
 
-    try {
-      const json = await pegarJson(FUNCS + '/liga?' + p.toString(), 25000);
-      temFuncoes = true;
-      return json;
-    } catch (e) {
-      if (temFuncoes === null) temFuncoes = false;
-      return { resultados: [], erro: String(e.message || e), indisponivel: temFuncoes === false };
+    const rotas = rotaLigaBoa ? [rotaLigaBoa] : ROTAS_LIGA;
+    let ultimoErro = null;
+
+    for (let i = 0; i < rotas.length; i++) {
+      try {
+        const json = await pegarJson(rotas[i] + qs, 25000);
+        temFuncoes = true;
+        rotaLigaBoa = rotas[i];
+        return json;
+      } catch (e) {
+        ultimoErro = e;
+      }
     }
+
+    // Nenhuma rota respondeu: ou não há servidor (site aberto como arquivo),
+    // ou as duas foram barradas.
+    if (temFuncoes === null) temFuncoes = false;
+    return {
+      resultados: [],
+      erro: String(ultimoErro && ultimoErro.message ? ultimoErro.message : ultimoErro),
+      indisponivel: temFuncoes === false,
+    };
   }
 
   // --- cotação -------------------------------------------------------------

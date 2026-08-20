@@ -42,7 +42,10 @@ const servidor = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
 
   // --- funções ---
-  const m = url.pathname.match(/^\/\.netlify\/functions\/([\w-]+)$/);
+  // /api/liga é a rota da edge function em produção; aqui responde a mesma coisa.
+  const m = url.pathname === '/api/liga'
+    ? [null, 'liga']
+    : url.pathname.match(/^\/\.netlify\/functions\/([\w-]+)$/);
   if (m) {
     const fn = funcoes[m[1]];
     if (!fn) {

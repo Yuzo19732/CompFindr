@@ -81,13 +81,22 @@ function urlCard(nomeCompleto, ed, n) {
     '&ed=' + encodeURIComponent(ed) + '&num=' + encodeURIComponent(n);
 }
 
+// Cabecalhos de navegador de verdade. Um pedido "pelado" (so User-Agent) leva
+// 403 com facilidade em site protegido.
 async function baixar(url) {
   const resp = await fetch(url, {
     headers: {
       'User-Agent': UA,
-      Accept: 'text/html,application/xhtml+xml',
-      'Accept-Language': 'pt-BR,pt;q=0.9',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Cache-Control': 'max-age=0',
     },
+    redirect: 'follow',
     signal: AbortSignal.timeout(20000),
   });
   if (!resp.ok) throw new Error('LigaPokemon respondeu ' + resp.status);
