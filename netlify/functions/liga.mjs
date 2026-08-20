@@ -105,6 +105,38 @@ async function baixar(url) {
 
 // --- caminho 1: pagina do card (JSON embutido) ------------------------------
 
+// Estado de conservacao, na numeracao da propria Liga.
+const QUALIDADES = { 1: 'M', 2: 'NM', 3: 'SP', 4: 'MP', 5: 'HP', 6: 'D' };
+
+// Quantos anuncios existem de cada estado.
+//
+// O PRECO de cada anuncio nao da para ler: eles publicam como imagem (cada
+// digito e um pedaco de um JPEG, via background-position no CSS), de proposito,
+// para nao ser lido por programa. Mas o ESTADO vem em texto puro no campo
+// `qualid`, e saber que existem 39 anuncios NM e so 2 HP ja diz muito.
+function contarPorEstado(html, idEdicao, num) {
+  const m = html.match(/var\s+cards_stock\s*=\s*(\[[\s\S]*?\])\s*;/);
+  if (!m) return null;
+
+  let anuncios;
+  try { anuncios = JSON.parse(m[1]); } catch (e) { return null; }
+  if (!Array.isArray(anuncios) || !anuncios.length) return null;
+
+  const contagem = {};
+  let total = 0;
+
+  anuncios.forEach(function (a) {
+    if (idEdicao != null && String(a.idEdicao) !== String(idEdicao)) return;
+    if (num && String(a.num) !== String(num)) return;
+    const sigla = QUALIDADES[Number(a.qualid)];
+    if (!sigla) return;
+    contagem[sigla] = (contagem[sigla] || 0) + 1;
+    total++;
+  });
+
+  return total ? { porEstado: contagem, total: total } : null;
+}
+
 function parseCardPage(html, numPedido) {
   const m = html.match(/var\s+cards_editions\s*=\s*(\[[\s\S]*?\])\s*;/);
   if (!m) return null;
@@ -122,7 +154,10 @@ function parseCardPage(html, numPedido) {
     const precos = e.price || {};
     const p = precos['0'] || Object.values(precos)[0] || {};
     const num = String(e.num == null ? (numPedido || '') : e.num);
+    const estoque = contarPorEstado(html, e.id, num);
     return {
+      anuncios: estoque ? estoque.porEstado : null,
+      anunciosTotal: estoque ? estoque.total : null,
       nome: partes.nome || tituloBruto,
       nomeCompleto: tituloBruto,
       edicao: e.code || '',

@@ -258,67 +258,20 @@
     return d;
   }
 
-  // Campo onde a pessoa anota o preço em reais que viu na LigaPokémon. Existe
-  // porque o Cloudflare barra o servidor do site, então esse número não tem
-  // como chegar sozinho — mas ele é justamente o que interessa no mercado
-  // brasileiro, então vale anotar uma vez e reaproveitar em tudo.
-  function campoPrecoManual(carta, aoMudar) {
-    const caixa = document.createElement('div');
-    caixa.className = 'meu-preco';
-
-    const rotulo = document.createElement('label');
-    rotulo.textContent = 'Preço que você viu na Liga';
-    rotulo.htmlFor = 'in-meu-preco';
-
-    const linha = document.createElement('div');
-    linha.className = 'linha-meu-preco';
-
-    const cifra = document.createElement('span');
-    cifra.className = 'cifra';
-    cifra.textContent = 'R$';
-
-    const campo = document.createElement('input');
-    campo.type = 'number';
-    campo.id = 'in-meu-preco';
-    campo.min = '0';
-    campo.step = '0.01';
-    campo.inputMode = 'decimal';
-    campo.placeholder = '0,00';
-    const atual = Store.precoManual(carta);
-    if (atual != null) campo.value = atual;
-
-    const salvar = document.createElement('button');
-    salvar.className = 'btn pequeno';
-    salvar.type = 'button';
-    salvar.textContent = 'Salvar';
-    salvar.addEventListener('click', function () {
-      const v = Store.salvarPrecoManual(carta, campo.value);
-      ['wishlist', 'colecao'].forEach(function (n) {
-        if (Store.tem(n, carta)) {
-          Store.atualizar(n, { id: carta.id, num: carta.num, total: carta.total, precoBRL: v });
-        }
-      });
-      avisar(v == null ? 'Preço apagado.' : 'Preço salvo: ' + brl(v));
-      if (aoMudar) aoMudar();
-    });
-
-    linha.appendChild(cifra);
-    linha.appendChild(campo);
-    linha.appendChild(salvar);
-    caixa.appendChild(rotulo);
-    caixa.appendChild(linha);
-    return caixa;
-  }
-
   // --- preço por estado de conservação -------------------------------------
   //
-  // A LigaPokémon publica o preço de cada anúncio como IMAGEM (sprite de CSS),
-  // de propósito, para não ser lido por programa. Então não dá para trazer o
-  // preço real de cada estado de lá, e inventar que dá seria pior.
+  // A LigaPokémon publica o preço de cada anúncio como IMAGEM: cada dígito é um
+  // pedaço de um JPEG, posicionado por CSS. Isso é proteção deliberada contra
+  // leitura por programa, então o preço real de cada estado não tem como chegar
+  // sozinho — e fingir que chega seria pior que não ter.
   //
-  // O que este bloco faz é aplicar as proporções de mercado sobre um preço de
-  // referência, deixando claro que é estimativa. As proporções ficam editáveis
-  // em Ajustes, porque variam por carta e por época.
+  // O que dá para fazer, e é o que este bloco faz:
+  //   · o ESTADO de cada anúncio vem em texto puro, então mostramos quantos
+  //     anúncios existem de cada um (saber que há 39 NM e só 2 HP já orienta);
+  //   · cada estado tem um campo para anotar o preço visto na Liga — o link
+  //     está logo abaixo, é abrir e copiar os seis números uma vez;
+  //   · o que não foi anotado aparece como estimativa, a partir das proporções
+  //     de mercado editáveis em Ajustes.
 
   function baseDeReferencia(carta, achado, cfg) {
     const meu = Store.precoManual(carta);
@@ -338,24 +291,30 @@
     return null;
   }
 
-  function blocoEstados(carta, achado, cfg) {
+  function blocoEstados(carta, achado, cfg, aoMudar) {
     const caixa = document.createElement('div');
     caixa.className = 'estados';
 
-    const base = baseDeReferencia(carta, achado, cfg);
-    if (!base) {
-      caixa.innerHTML = '<p class="ajuda">Sem preço de referência para estimar os estados.</p>';
-      return caixa;
-    }
-
     const titulo = document.createElement('div');
     titulo.className = 'estados-titulo';
-    titulo.textContent = 'Preço por estado (estimativa)';
+    titulo.textContent = 'Preço por estado';
     caixa.appendChild(titulo);
 
+    const legenda = document.createElement('p');
+    legenda.className = 'ajuda';
+    legenda.textContent = 'Anote o que você viu na Liga. O que ficar em branco vira estimativa.';
+    caixa.appendChild(legenda);
+
+    const base = baseDeReferencia(carta, achado, cfg);
+    const anotados = Store.precosEstado(carta);
+    const anuncios = (achado && achado.anuncios) || null;
+
     Store.ESTADOS.forEach(function (e) {
+      const anotado = Number(anotados[e.sigla]);
+      const temAnotado = Number.isFinite(anotado) && anotado > 0;
+
       const linha = document.createElement('div');
-      linha.className = 'estado-linha' + (e.sigla === 'NM' ? ' referencia' : '');
+      linha.className = 'estado-linha' + (temAnotado ? ' anotado' : '');
 
       const sigla = document.createElement('span');
       sigla.className = 'sigla';
@@ -364,25 +323,60 @@
       const desc = document.createElement('span');
       desc.className = 'descricao';
       desc.textContent = e.nome;
+      if (anuncios) {
+        const qtd = anuncios[e.sigla] || 0;
+        const marca = document.createElement('span');
+        marca.className = 'qtd' + (qtd ? '' : ' zero');
+        marca.textContent = qtd ? qtd + (qtd === 1 ? ' anúncio' : ' anúncios') : 'sem anúncio';
+        desc.appendChild(document.createElement('br'));
+        desc.appendChild(marca);
+      }
 
-      const valor = document.createElement('span');
-      valor.className = 'valor';
-      valor.textContent = brl(base.valor * cfg.estados[e.sigla]) || '—';
+      const campo = document.createElement('input');
+      campo.type = 'number';
+      campo.min = '0';
+      campo.step = '0.01';
+      campo.inputMode = 'decimal';
+      campo.setAttribute('aria-label', 'Preço da carta em estado ' + e.nome);
+      // Em branco, mostra a estimativa como sugestão — some ao digitar.
+      campo.placeholder = base ? formatarSimples(base.valor * cfg.estados[e.sigla]) : '0,00';
+      if (temAnotado) campo.value = anotado;
+
+      campo.addEventListener('change', function () {
+        Store.salvarPrecoEstado(carta, e.sigla, campo.value);
+        const ref = Store.precoManual(carta);
+        ['wishlist', 'colecao'].forEach(function (n) {
+          if (Store.tem(n, carta)) {
+            Store.atualizar(n, { id: carta.id, num: carta.num, total: carta.total, precoBRL: ref });
+          }
+        });
+        if (aoMudar) aoMudar();
+      });
 
       linha.appendChild(sigla);
       linha.appendChild(desc);
-      linha.appendChild(valor);
+      linha.appendChild(campo);
       caixa.appendChild(linha);
     });
 
     const nota = document.createElement('p');
     nota.className = 'ajuda';
-    nota.textContent = 'Calculado sobre o ' + base.texto + ' (' + brl(base.valor) + '), ' +
-      'tratado como NM. A Liga não publica o preço por estado de forma legível, ' +
-      'então isto é referência de mercado — ajuste as proporções em Ajustes.';
+    if (base) {
+      nota.textContent = 'As sugestões em cinza saem do ' + base.texto + ' (' +
+        brl(base.valor) + '), tratado como NM. A Liga publica o preço de cada anúncio ' +
+        'como imagem, então esse número não vem sozinho.';
+    } else {
+      nota.textContent = 'Sem preço de referência para sugerir valores.';
+    }
     caixa.appendChild(nota);
 
     return caixa;
+  }
+
+  // "1234.5" -> "1234,50", que é como o campo espera receber.
+  function formatarSimples(n) {
+    if (n == null || !Number.isFinite(Number(n))) return '0,00';
+    return Number(n).toFixed(2).replace('.', ',');
   }
 
   async function abrirDetalhe(carta) {
@@ -502,14 +496,15 @@
       ));
     }
 
-    precos.appendChild(campoPrecoManual(carta, function () {
+    function redesenharEstados() {
       precoBRL = Store.precoManual(carta);
       desenharAcoes();
       const velho = precos.querySelector('.estados');
-      if (velho) velho.replaceWith(blocoEstados(carta, r.achado, Store.config()));
-    }));
+      const novo = blocoEstados(carta, r.achado, Store.config(), redesenharEstados);
+      if (velho) velho.replaceWith(novo);
+    }
 
-    precos.appendChild(blocoEstados(carta, r.achado, cfg));
+    precos.appendChild(blocoEstados(carta, r.achado, cfg, redesenharEstados));
 
     // O link vai sempre, tenha anúncio ou não — é assim que dá para conferir a
     // carta na Liga mesmo quando ninguém está vendendo.

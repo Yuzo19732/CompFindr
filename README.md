@@ -115,22 +115,13 @@ O app percebe sozinho (desiste depois de duas tentativas na sessão), explica na
 oferece o link para abrir a carta na Liga. Para diagnosticar de qualquer lugar:
 `https://<seu-site>/api/liga?nome=Pikachu&debug=1`.
 
-### Preço anotado à mão
-
-Como o número do mercado brasileiro é justamente o que interessa, cada carta tem um
-campo **"Preço que você viu na Liga"**. Abre o link, olha o valor, anota uma vez.
-
-Esse número passa a valer mais que qualquer outro: aparece na grade, soma no total da
-coleção, vira a base da tabela de estados e entra no backup.
-
 ---
 
 ## Estado de conservação (M, NM, SP, MP, HP, D)
 
-Cada carta mostra uma tabela de valor estimado por estado, com as siglas da
-LigaPokémon:
+Cada carta abre com uma tabela dos seis estados, nas siglas da LigaPokémon:
 
-| Sigla | Significado | Padrão |
+| Sigla | Significado | Proporção padrão |
 | --- | --- | --- |
 | M | Nova | 115% |
 | NM | Praticamente Nova | 100% (referência) |
@@ -139,14 +130,32 @@ LigaPokémon:
 | HP | Muito Usada | 50% |
 | D | Danificada | 30% |
 
-**Estes valores são estimativa, não dado da LigaPokémon.** A Liga tem o preço de cada
-anúncio por estado, mas publica esses números como **imagem** (um sprite de CSS onde
-cada dígito é um pedaço de um JPEG), de propósito, para não serem lidos por programa.
-O filtro de qualidade também não muda os valores agregados que eles publicam em texto.
+Cada linha tem três coisas:
 
-O app aplica proporções de mercado sobre um preço de referência — o que você anotou,
-senão o médio da Liga, senão o do TCGPlayer. Editáveis em **Ajustes → Estado de
-conservação**.
+1. **Quantos anúncios existem naquele estado** — dado real, lido da Liga. Saber que
+   há 39 NM e só 2 HP já orienta a decisão.
+2. **Um campo para anotar o preço** que você viu. O link para a carta na Liga está
+   logo abaixo: abre, copia os números, pronto. O que é anotado fica marcado em verde
+   e vira dado, não palpite.
+3. **Uma sugestão em cinza** para o que não foi anotado, calculada sobre um preço de
+   referência. Se você anotar a NM, todas as outras sugestões passam a sair dela.
+
+### Por que o preço por estado não vem sozinho
+
+A Liga tem o preço de cada anúncio por estado, e ele aparece na tela — mas **não é
+texto**. Cada dígito é um pedaço de um JPEG, posicionado por CSS:
+
+```
+"precoCss": "rXgTn nNmYg jQgXo;V;mNnLa rXgTn nNmYg;mNnLa nNmYg rXgTn"
+.rXgTn { background-image: url(.../imgnum/files/img/260422rTy8z8199w5414s70szh5e3fdqee7f.jpg) }
+```
+
+Isso é proteção deliberada contra leitura por programa, e a imagem do sprite ainda
+troca de endereço. Decodificar seria derrotar essa proteção — coisa que este projeto
+não faz. Já o **estado** de cada anúncio (`qualid`) vem em texto puro, e é de onde sai
+a contagem.
+
+As proporções das sugestões ficam em **Ajustes → Estado de conservação**.
 
 ---
 

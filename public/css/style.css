@@ -496,18 +496,6 @@ input:focus-visible { outline: 2px solid var(--destaque-2); outline-offset: -1px
 .preco-linha .valor small { display: block; font-weight: 500; font-size: .72rem; color: var(--texto-fraco); }
 .preco-linha .valor.verde { color: var(--ok); }
 
-/* preço anotado à mão */
-.meu-preco {
-  background: var(--superficie-alta);
-  border: 1px dashed var(--borda-forte);
-  border-radius: 12px;
-  padding: 12px 13px;
-}
-.meu-preco label { display: block; font-size: .8rem; color: var(--texto-medio); margin-bottom: 9px; }
-.linha-meu-preco { display: flex; align-items: center; gap: 8px; }
-.linha-meu-preco .cifra { color: var(--texto-fraco); font-size: .9rem; }
-.linha-meu-preco input { flex: 1; min-width: 0; }
-
 /* estados de conservação */
 .estados {
   background: var(--superficie-alta);
@@ -515,21 +503,41 @@ input:focus-visible { outline: 2px solid var(--destaque-2); outline-offset: -1px
   border-radius: 12px;
   padding: 13px;
 }
-.estados-titulo { font-size: .9rem; font-weight: 650; margin-bottom: 4px; }
+.estados-titulo { font-size: .9rem; font-weight: 650; }
+.estados > .ajuda:first-of-type { margin: 4px 0 6px; }
+
 .estado-linha {
   display: grid;
-  grid-template-columns: 38px 1fr auto;
-  gap: 9px;
-  align-items: baseline;
-  padding: 7px 0;
-  border-top: 1px solid rgba(255, 255, 255, .05);
+  grid-template-columns: 36px 1fr 104px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid rgba(255, 255, 255, .06);
 }
-.estado-linha .sigla { font-weight: 700; font-size: .78rem; color: var(--destaque-2); }
-.estado-linha .descricao { font-size: .78rem; color: var(--texto-fraco); }
-.estado-linha .valor { font-weight: 650; font-size: .94rem; white-space: nowrap; }
-.estado-linha.referencia .sigla,
-.estado-linha.referencia .valor { color: var(--ok); }
-.estados .ajuda { margin-top: 11px; }
+.estado-linha .sigla {
+  font-weight: 700; font-size: .8rem;
+  color: var(--destaque-2);
+}
+.estado-linha .descricao { font-size: .78rem; color: var(--texto-medio); line-height: 1.35; }
+.estado-linha .qtd { font-size: .68rem; color: var(--texto-fraco); }
+.estado-linha .qtd.zero { color: rgba(255, 255, 255, .22); }
+.estado-linha input {
+  width: 100%;
+  padding: 7px 9px;
+  font-size: .9rem;
+  text-align: right;
+}
+.estado-linha input::placeholder { color: var(--texto-fraco); opacity: .55; }
+
+/* estado com preço anotado: passa a ser dado real, não sugestão */
+.estado-linha.anotado .sigla { color: var(--ok); }
+.estado-linha.anotado input {
+  border-color: rgba(52, 211, 153, .45);
+  color: var(--ok);
+  font-weight: 650;
+}
+
+.estados .ajuda:last-child { margin-top: 12px; }
 
 .acoes-detalhe { display: flex; gap: 9px; margin-top: 18px; flex-wrap: wrap; }
 .acoes-detalhe .btn { flex: 1; min-width: 140px; }

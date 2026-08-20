@@ -144,19 +144,45 @@ const Store = (function () {
     return v && typeof v === 'object' ? v : {};
   }
 
-  function precoManual(carta) {
+  // Os preços anotados de uma carta, por estado: { NM: 39.9, D: 24.9 }.
+  // O formato antigo guardava um valor só; ele passa a valer como NM.
+  function precosEstado(carta) {
     const p = precosManuais()[chaveDe(carta)];
-    return p && Number.isFinite(Number(p.valor)) ? Number(p.valor) : null;
+    if (!p) return {};
+    if (p.estados && typeof p.estados === 'object') return p.estados;
+    const antigo = Number(p.valor);
+    return Number.isFinite(antigo) && antigo > 0 ? { NM: antigo } : {};
   }
 
-  function salvarPrecoManual(carta, valor) {
+  function salvarPrecoEstado(carta, sigla, valor) {
     const todos = precosManuais();
     const k = chaveDe(carta);
+    const estados = Object.assign({}, precosEstado(carta));
     const n = Number(valor);
-    if (!Number.isFinite(n) || n <= 0) delete todos[k];
-    else todos[k] = { valor: n, em: Date.now() };
+
+    if (!Number.isFinite(n) || n <= 0) delete estados[sigla];
+    else estados[sigla] = n;
+
+    if (!Object.keys(estados).length) delete todos[k];
+    else todos[k] = { estados: estados, em: Date.now() };
+
     gravar(CHAVES.precos, todos);
-    return precoManual(carta);
+    return estados;
+  }
+
+  // O valor que representa a carta nas listas e no total da coleção. Prefere a
+  // NM, que é a referência do mercado; sem ela, pega o melhor estado anotado.
+  function precoManual(carta) {
+    const estados = precosEstado(carta);
+    const valido = function (v) { return Number.isFinite(Number(v)) && Number(v) > 0; };
+
+    if (valido(estados.NM)) return Number(estados.NM);
+
+    for (let i = 0; i < ORDEM_ESTADOS.length; i++) {
+      const v = estados[ORDEM_ESTADOS[i].sigla];
+      if (valido(v)) return Number(v);
+    }
+    return null;
   }
 
   // --- exportar / importar -------------------------------------------------
@@ -196,7 +222,8 @@ const Store = (function () {
     ESTADOS: ORDEM_ESTADOS,
     ESTADOS_PADRAO: ESTADOS_PADRAO,
     precoManual: precoManual,
-    salvarPrecoManual: salvarPrecoManual,
+    precosEstado: precosEstado,
+    salvarPrecoEstado: salvarPrecoEstado,
     lista: lista,
     chaveDe: chaveDe,
     tem: tem,
