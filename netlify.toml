@@ -1,0 +1,24 @@
+# ============================================================
+#  Configuração do Netlify — CompFindr
+# ============================================================
+[build]
+  publish = "public"
+  # Não há build step: o site é HTML/CSS/JS puro.
+  command = "node tools/make-icons.cjs"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Cabeçalhos necessários para a câmera e para o PWA
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Permissions-Policy = "camera=(self)"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"

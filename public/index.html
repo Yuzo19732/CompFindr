@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0d16">
+<meta name="description" content="Escaneie cartas Pokémon com a câmera e veja o preço na LigaPokémon, TCGPlayer e Cardmarket.">
+<title>CompFindr — scanner de cartas Pokémon</title>
+
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <span class="bola" aria-hidden="true"></span>
+    <div>
+      <h1>CompFindr</h1>
+      <p id="subtitulo">escaneie a carta, veja o preço</p>
+    </div>
+  </div>
+  <button id="btn-instalar" class="btn-instalar oculto" type="button">Instalar</button>
+</header>
+
+<main>
+
+  <!-- ========================== ESCANEAR ========================== -->
+  <section id="view-escanear" class="view ativa">
+
+    <div class="camera-caixa" id="camera-caixa">
+      <video id="video" playsinline muted autoplay></video>
+
+      <div class="guia" id="guia" hidden>
+        <div class="guia-borda"></div>
+        <div class="guia-faixa-nome"></div>
+        <div class="guia-faixa-num"></div>
+      </div>
+
+      <div class="camera-vazia" id="camera-vazia">
+        <p class="ico">📷</p>
+        <p>Encoste a carta na moldura e deixe o <strong>número do rodapé</strong> (ex.: 125/197) bem visível.</p>
+        <button id="btn-camera" class="btn primario" type="button">Ligar câmera</button>
+        <p class="dica" id="dica-https"></p>
+      </div>
+    </div>
+
+    <div class="barra-camera" id="barra-camera" hidden>
+      <button id="btn-capturar" class="btn primario grande" type="button">Escanear carta</button>
+      <button id="btn-lanterna" class="btn icone" type="button" title="Lanterna" hidden>🔦</button>
+      <button id="btn-parar" class="btn icone" type="button" title="Desligar câmera">✕</button>
+    </div>
+
+    <p class="status" id="status-scan"></p>
+    <div class="barra-progresso oculto" id="barra-progresso"><div id="progresso"></div></div>
+
+    <details class="manual">
+      <summary>Digitar o número na mão</summary>
+      <p class="ajuda">Use quando a luz estiver ruim ou a carta for antiga. O número fica no rodapé da carta.</p>
+      <div class="linha-manual">
+        <input id="in-num" type="text" inputmode="numeric" placeholder="125" maxlength="4" aria-label="Número da carta">
+        <span class="barra">/</span>
+        <input id="in-total" type="text" inputmode="numeric" placeholder="197" maxlength="4" aria-label="Total da coleção">
+        <input id="in-nome-manual" type="text" placeholder="nome (opcional)" aria-label="Nome da carta">
+        <button id="btn-manual" class="btn primario" type="button">Identificar</button>
+      </div>
+    </details>
+
+    <div id="resultado-scan" class="resultados"></div>
+  </section>
+
+  <!-- ========================== BUSCAR ========================== -->
+  <section id="view-buscar" class="view">
+    <div class="linha-busca">
+      <input id="in-busca" type="search" placeholder="Nome da carta (ex.: Charizard)" aria-label="Buscar carta pelo nome">
+      <button id="btn-busca" class="btn primario" type="button">Buscar</button>
+    </div>
+    <p class="status" id="status-busca"></p>
+    <div id="resultado-busca" class="resultados"></div>
+  </section>
+
+  <!-- ========================== WISHLIST ========================== -->
+  <section id="view-wishlist" class="view">
+    <div class="cabecalho-lista">
+      <h2>Wishlist</h2>
+      <div class="acoes-lista">
+        <span class="total" id="total-wishlist"></span>
+        <button id="btn-atualizar-wishlist" class="btn pequeno" type="button">Atualizar preços</button>
+      </div>
+    </div>
+    <div id="lista-wishlist" class="resultados"></div>
+  </section>
+
+  <!-- ========================== COLEÇÃO ========================== -->
+  <section id="view-colecao" class="view">
+    <div class="cabecalho-lista">
+      <h2>Minha coleção</h2>
+      <div class="acoes-lista">
+        <span class="total" id="total-colecao"></span>
+        <button id="btn-atualizar-colecao" class="btn pequeno" type="button">Atualizar preços</button>
+      </div>
+    </div>
+    <div id="lista-colecao" class="resultados"></div>
+  </section>
+
+  <!-- ========================== AJUSTES ========================== -->
+  <section id="view-ajustes" class="view">
+    <h2>Ajustes</h2>
+
+    <div class="cartao-ajuste">
+      <h3>Cotação das moedas</h3>
+      <p class="ajuda">Usada para converter os preços do TCGPlayer (USD) e Cardmarket (EUR) para reais.</p>
+      <div class="linha-ajuste">
+        <label for="in-usd">1 USD =</label>
+        <input id="in-usd" type="number" step="0.01" min="0">
+        <span>R$</span>
+      </div>
+      <div class="linha-ajuste">
+        <label for="in-eur">1 EUR =</label>
+        <input id="in-eur" type="number" step="0.01" min="0">
+        <span>R$</span>
+      </div>
+      <button id="btn-cotacao" class="btn pequeno" type="button">Buscar cotação de hoje</button>
+      <p class="status" id="status-cotacao"></p>
+    </div>
+
+    <div class="cartao-ajuste">
+      <h3>Scanner</h3>
+      <label class="linha-check">
+        <input id="chk-nome" type="checkbox" checked>
+        <span>Ler também o nome da carta (mais lento, desempata melhor)</span>
+      </label>
+      <label class="linha-check">
+        <input id="chk-liga" type="checkbox" checked>
+        <span>Consultar preço na LigaPokémon automaticamente</span>
+      </label>
+    </div>
+
+    <div class="cartao-ajuste">
+      <h3>Meus dados</h3>
+      <p class="ajuda">Tudo fica salvo só neste aparelho, no navegador. Exporte para não perder.</p>
+      <div class="linha-botoes">
+        <button id="btn-exportar" class="btn pequeno" type="button">Exportar</button>
+        <button id="btn-importar" class="btn pequeno" type="button">Importar</button>
+        <button id="btn-limpar" class="btn pequeno perigo" type="button">Apagar tudo</button>
+      </div>
+      <input id="in-arquivo" type="file" accept="application/json" hidden>
+    </div>
+
+    <div class="cartao-ajuste">
+      <h3>Fontes de preço</h3>
+      <ul class="fontes">
+        <li><strong>LigaPokémon</strong> — preço em reais (menor / médio / maior anunciado).</li>
+        <li><strong>TCGPlayer</strong> — preço de mercado nos EUA, em dólar.</li>
+        <li><strong>Cardmarket</strong> — tendência na Europa, em euro.</li>
+      </ul>
+      <p class="ajuda">A identificação da carta usa a base <code>pokemontcg.io</code>, com <code>tcgdex.net</code> como reserva.</p>
+    </div>
+  </section>
+
+</main>
+
+<nav class="abas" role="tablist">
+  <button class="aba ativa" data-view="escanear" type="button"><span>⌖</span>Escanear</button>
+  <button class="aba" data-view="buscar" type="button"><span>⌕</span>Buscar</button>
+  <button class="aba" data-view="wishlist" type="button"><span>★</span>Wishlist</button>
+  <button class="aba" data-view="colecao" type="button"><span>▦</span>Coleção</button>
+  <button class="aba" data-view="ajustes" type="button"><span>⚙</span>Ajustes</button>
+</nav>
+
+<!-- ========================== DETALHE ========================== -->
+<div id="modal" class="modal oculto" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+  <div class="modal-fundo" data-fechar></div>
+  <div class="modal-caixa">
+    <button class="modal-x" type="button" data-fechar aria-label="Fechar">✕</button>
+    <div id="modal-conteudo"></div>
+  </div>
+</div>
+
+<div id="aviso" class="aviso oculto"></div>
+
+<canvas id="canvas-trabalho" hidden></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="/js/store.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/ocr.js"></script>
+<script src="/js/scanner.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
