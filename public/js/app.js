@@ -43,6 +43,7 @@
     });
     if (nome === 'wishlist') desenharLista('wishlist');
     if (nome === 'colecao') desenharLista('colecao');
+    if (nome === 'buscar') desenharInicio();
     window.scrollTo(0, 0);
   }
 
@@ -396,6 +397,8 @@
       } catch (e) { /* mostra o que tem */ }
     }
 
+    Store.registrarVisita(carta);
+
     const topo = document.createElement('div');
     topo.className = 'detalhe-topo';
     const img = document.createElement('img');
@@ -578,13 +581,34 @@
   const elStatusBusca = $('status-busca');
   const elResultado = $('resultado-busca');
 
+  // Enquanto há resultado na tela, a área inicial some — senão a página vira
+  // uma rolagem longa de coisas competindo por atenção.
+  function mostrarInicio(sim) {
+    $('inicio').classList.toggle('oculto', !sim);
+    $('btn-limpar-busca').classList.toggle('oculto', sim);
+  }
+
+  // Molduras cinzas no lugar dos resultados, para a tela não ficar em branco
+  // enquanto a busca acontece.
+  function esqueleto(quantas) {
+    elResultado.innerHTML = '';
+    for (let i = 0; i < quantas; i++) {
+      const d = document.createElement('div');
+      d.className = 'carta esqueleto';
+      d.innerHTML = '<div class="arte"></div><div class="info">' +
+        '<div class="barra"></div><div class="barra curta"></div></div>';
+      elResultado.appendChild(d);
+    }
+  }
+
   async function buscar() {
     const termo = $('in-busca').value.trim();
     if (!termo) return;
 
     const numero = lerNumero(termo);
     status(elStatusBusca, 'Procurando…');
-    elResultado.innerHTML = '';
+    mostrarInicio(false);
+    esqueleto(numero ? 2 : 6);
 
     try {
       const r = numero
@@ -619,6 +643,64 @@
   $('btn-busca').addEventListener('click', buscar);
   $('in-busca').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); $('in-busca').blur(); buscar(); }
+  });
+
+  function limparBusca() {
+    $('in-busca').value = '';
+    elResultado.innerHTML = '';
+    status(elStatusBusca, '');
+    mostrarInicio(true);
+    desenharInicio();
+    $('in-busca').focus();
+  }
+
+  $('btn-limpar-busca').addEventListener('click', limparBusca);
+  $('in-busca').addEventListener('input', function () {
+    if (!$('in-busca').value.trim()) limparBusca();
+  });
+
+  // --- tela inicial --------------------------------------------------------
+
+  function somaLista(nome) {
+    const cfg = Store.config();
+    const cartas = Store.lista(nome);
+    let soma = 0;
+    cartas.forEach(function (c) {
+      const meu = Store.precoManual(c);
+      if (meu != null) soma += meu;
+      else if (c.precoBRL != null) soma += c.precoBRL;
+      else if (c.precoUSD != null) soma += c.precoUSD * cfg.usdBrl;
+    });
+    return { qtd: cartas.length, valor: soma };
+  }
+
+  function desenharInicio() {
+    const cfg = Store.config();
+
+    ['colecao', 'wishlist'].forEach(function (nome) {
+      const s = somaLista(nome);
+      $('atalho-' + nome + '-qtd').textContent = s.qtd;
+      $('atalho-' + nome + '-valor').textContent = s.qtd ? (brl(s.valor) || 'R$ 0,00') : 'vazia';
+    });
+    $('atalho-usd').textContent = brl(cfg.usdBrl) || '—';
+
+    const cartas = Store.recentes();
+    $('secao-recentes').classList.toggle('oculto', !cartas.length);
+    if (cartas.length) {
+      const el = $('lista-recentes');
+      el.innerHTML = '';
+      cartas.forEach(function (c) { el.appendChild(elemCarta(c)); });
+    }
+  }
+
+  document.querySelectorAll('.atalho').forEach(function (b) {
+    b.addEventListener('click', function () { mostrarView(b.dataset.ir); });
+  });
+
+  $('btn-limpar-recentes').addEventListener('click', function () {
+    Store.limparRecentes();
+    desenharInicio();
+    avisar('Histórico limpo.');
   });
 
   // --- wishlist e coleção --------------------------------------------------
@@ -866,6 +948,7 @@
   carregarAjustes();
   desenharLista('wishlist');
   desenharLista('colecao');
+  desenharInicio();
 
   // Deixa a lista de coleções pronta antes da primeira busca.
   Api.carregarSets().catch(function () { /* a busca tenta de novo */ });

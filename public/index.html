@@ -34,9 +34,10 @@
 
     <div class="busca-caixa">
       <div class="campo-busca">
-        <span class="lupa" aria-hidden="true">⌕</span>
-        <input id="in-busca" type="search" enterkeyhint="search"
+        <svg class="lupa" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+        <input id="in-busca" type="search" enterkeyhint="search" autocomplete="off"
                placeholder="125/197 ou Charizard" aria-label="Número da carta ou nome">
+        <button id="btn-limpar-busca" class="limpar oculto" type="button" aria-label="Limpar busca">✕</button>
         <button id="btn-busca" class="btn primario" type="button">Buscar</button>
       </div>
       <p class="ajuda">
@@ -47,6 +48,47 @@
 
     <p class="status" id="status-busca"></p>
     <div id="resultado-busca" class="grade"></div>
+
+    <!-- Tudo abaixo some enquanto há resultado de busca na tela. -->
+    <div id="inicio">
+      <div class="atalhos">
+        <button class="atalho" data-ir="colecao" type="button">
+          <span class="rotulo">Coleção</span>
+          <span class="numero" id="atalho-colecao-qtd">0</span>
+          <span class="sub" id="atalho-colecao-valor">R$ 0,00</span>
+        </button>
+        <button class="atalho" data-ir="wishlist" type="button">
+          <span class="rotulo">Wishlist</span>
+          <span class="numero" id="atalho-wishlist-qtd">0</span>
+          <span class="sub" id="atalho-wishlist-valor">R$ 0,00</span>
+        </button>
+        <button class="atalho" data-ir="ajustes" type="button">
+          <span class="rotulo">Dólar hoje</span>
+          <span class="numero" id="atalho-usd">—</span>
+          <span class="sub">toque para ajustar</span>
+        </button>
+      </div>
+
+      <section class="secao oculto" id="secao-recentes">
+        <div class="secao-topo">
+          <h2>Vistas recentemente</h2>
+          <button id="btn-limpar-recentes" class="btn pequeno" type="button">Limpar</button>
+        </div>
+        <div id="lista-recentes" class="grade"></div>
+      </section>
+
+      <section class="secao" id="secao-como">
+        <h2>Como achar a carta certa</h2>
+        <ol class="passos">
+          <li><b>Vire a carta para o rodapé.</b> Lá tem algo como <code>125/197</code>.</li>
+          <li><b>Digite os dois números.</b> O segundo é o tamanho da coleção, e é ele
+            que diz de qual coleção a carta é.</li>
+          <li><b>Confira a arte.</b> Quando duas coleções têm o mesmo tamanho, o app
+            mostra as duas para você escolher de olho.</li>
+        </ol>
+        <p class="ajuda">Carta antiga sem número no rodapé? Busque pelo nome.</p>
+      </section>
+    </div>
   </section>
 
   <!-- ========================== WISHLIST ========================== -->
@@ -146,10 +188,22 @@
 </main>
 
 <nav class="abas" role="tablist">
-  <button class="aba ativa" data-view="buscar" type="button"><span>⌕</span>Buscar</button>
-  <button class="aba" data-view="wishlist" type="button"><span>★</span>Wishlist</button>
-  <button class="aba" data-view="colecao" type="button"><span>▦</span>Coleção</button>
-  <button class="aba" data-view="ajustes" type="button"><span>⚙</span>Ajustes</button>
+  <button class="aba ativa" data-view="buscar" type="button">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+    Buscar
+  </button>
+  <button class="aba" data-view="wishlist" type="button">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.7l5.8-.8z"/></svg>
+    Wishlist
+  </button>
+  <button class="aba" data-view="colecao" type="button">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="9" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="9" rx="1.6"/><rect x="3.5" y="15.5" width="7" height="5" rx="1.6"/><rect x="13.5" y="15.5" width="7" height="5" rx="1.6"/></svg>
+    Coleção
+  </button>
+  <button class="aba" data-view="ajustes" type="button">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M4.5 4.5l1.9 1.9M17.6 17.6l1.9 1.9M2.8 12h2.6M18.6 12h2.6M4.5 19.5l1.9-1.9M17.6 6.4l1.9-1.9"/></svg>
+    Ajustes
+  </button>
 </nav>
 
 <!-- ========================== DETALHE ========================== -->

@@ -155,7 +155,24 @@ main { padding: 18px 16px 28px; max-width: 900px; margin: 0 auto; }
   border-color: var(--destaque-2);
   box-shadow: 0 0 0 3px rgba(139, 92, 246, .18);
 }
-.campo-busca .lupa { color: var(--texto-fraco); font-size: 1.25rem; line-height: 1; }
+.campo-busca .lupa {
+  width: 19px; height: 19px; flex: none;
+  fill: none; stroke: var(--texto-fraco);
+  stroke-width: 2; stroke-linecap: round;
+}
+.campo-busca:focus-within .lupa { stroke: var(--destaque-2); }
+
+.campo-busca .limpar {
+  flex: none;
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  border: none; border-radius: 50%;
+  background: var(--superficie-alta);
+  color: var(--texto-fraco);
+  font-size: .72rem;
+  cursor: pointer;
+}
+.campo-busca .limpar:hover { color: var(--texto); }
 .campo-busca input {
   flex: 1;
   min-width: 0;
@@ -327,6 +344,69 @@ main { padding: 18px 16px 28px; max-width: 900px; margin: 0 auto; }
 }
 .vazio .ico { display: block; font-size: 2rem; margin-bottom: 10px; opacity: .5; }
 
+/* ---------- carregando (molduras cinzas) ---------- */
+
+.carta.esqueleto { pointer-events: none; }
+.carta.esqueleto .arte,
+.carta.esqueleto .barra {
+  background: linear-gradient(100deg, var(--superficie-alta) 30%, rgba(255, 255, 255, .07) 50%, var(--superficie-alta) 70%);
+  background-size: 220% 100%;
+  animation: brilho 1.2s linear infinite;
+}
+.carta.esqueleto .barra { height: 11px; border-radius: 5px; margin-top: 9px; }
+.carta.esqueleto .barra.curta { width: 58%; }
+@keyframes brilho { from { background-position: 140% 0; } to { background-position: -40% 0; } }
+
+/* ---------- tela inicial ---------- */
+
+.atalhos {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.atalho {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  padding: 13px 12px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .14s, transform .06s;
+}
+.atalho:hover { border-color: var(--borda-forte); }
+.atalho:active { transform: translateY(1px); }
+.atalho .rotulo { font-size: .72rem; color: var(--texto-fraco); }
+.atalho .numero { font-size: 1.32rem; font-weight: 700; line-height: 1.15; }
+.atalho .sub {
+  font-size: .7rem; color: var(--ok);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.secao { margin-top: 26px; }
+.secao-topo {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.secao h2 { font-size: 1rem; }
+.secao .grade { margin-top: 12px; }
+
+.passos {
+  margin: 12px 0 0;
+  padding-left: 20px;
+  font-size: .86rem;
+  color: var(--texto-medio);
+  line-height: 1.65;
+}
+.passos li { margin-bottom: 8px; }
+.passos li::marker { color: var(--destaque-2); font-weight: 700; }
+.passos b { color: var(--texto); font-weight: 620; }
+#secao-como .ajuda { margin-top: 4px; }
+
 /* ---------- painel das listas ---------- */
 
 .painel-lista {
@@ -423,8 +503,15 @@ input:focus-visible { outline: 2px solid var(--destaque-2); outline-offset: -1px
   position: relative;
   transition: color .15s;
 }
-.aba span { font-size: 1.2rem; line-height: 1; }
+.aba svg {
+  width: 21px; height: 21px;
+  fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+  transition: transform .16s;
+}
 .aba.ativa { color: var(--destaque); }
+.aba.ativa svg { transform: translateY(-1px) scale(1.06); }
+.aba:not(.ativa):hover { color: var(--texto-medio); }
 .aba.ativa::before {
   content: '';
   position: absolute; top: 0; left: 50%; transform: translateX(-50%);

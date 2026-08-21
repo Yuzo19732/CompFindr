@@ -13,7 +13,10 @@ const Store = (function () {
     colecao: 'cc.colecao',
     config: 'cc.config',
     precos: 'cc.precosBR',
+    recentes: 'cc.recentes',
   };
+
+  const MAX_RECENTES = 8;
 
   // Quanto vale uma carta em cada estado de conservação, em relação a uma NM.
   // São as siglas da LigaPokémon: M (Nova), NM (Praticamente Nova), SP (Usada
@@ -185,6 +188,35 @@ const Store = (function () {
     return null;
   }
 
+  // --- vistas recentemente -------------------------------------------------
+  //
+  // Guarda o essencial de cada carta aberta, para a tela inicial ter o que
+  // mostrar e para voltar numa carta sem precisar buscar de novo.
+
+  function recentes() {
+    const v = ler(CHAVES.recentes, []);
+    return Array.isArray(v) ? v : [];
+  }
+
+  function registrarVisita(carta) {
+    if (!carta || !carta.id) return;
+    const k = chaveDe(carta);
+    const enxuta = {
+      id: carta.id, nome: carta.nome, num: carta.num, total: carta.total,
+      set: carta.set, setId: carta.setId, raridade: carta.raridade,
+      imagem: carta.imagem, imagemGrande: carta.imagemGrande,
+      precoUSD: carta.precoUSD, precoEUR: carta.precoEUR, precoBRL: carta.precoBRL,
+      completa: !!carta.completa,
+    };
+    const lista = recentes().filter(function (c) { return chaveDe(c) !== k; });
+    lista.unshift(enxuta);
+    gravar(CHAVES.recentes, lista.slice(0, MAX_RECENTES));
+  }
+
+  function limparRecentes() {
+    localStorage.removeItem(CHAVES.recentes);
+  }
+
   // --- exportar / importar -------------------------------------------------
 
   function exportar() {
@@ -221,6 +253,9 @@ const Store = (function () {
     salvarConfig: salvarConfig,
     ESTADOS: ORDEM_ESTADOS,
     ESTADOS_PADRAO: ESTADOS_PADRAO,
+    recentes: recentes,
+    registrarVisita: registrarVisita,
+    limparRecentes: limparRecentes,
     precoManual: precoManual,
     precosEstado: precosEstado,
     salvarPrecoEstado: salvarPrecoEstado,
